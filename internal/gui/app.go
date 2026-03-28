@@ -1,0 +1,542 @@
+package gui
+
+import (
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"procir/internal/iocmonitor"
+	"procir/internal/memory"
+	"procir/internal/scoring"
+	"procir/internal/types"
+	"procir/internal/yara"
+)
+
+var (
+	scanMu     sync.Mutex
+	lastResult *scoring.ScanResult
+	scanning   bool
+
+	// YARA scan progress
+	yaraProgress atomic.Int64 // current
+	yaraTotal    atomic.Int64 // total
+	yaraRunning  atomic.Int32 // 1 = scanning
+)
+
+func Run() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handleIndex)
+	mux.HandleFunc("/api/scan", handleScan)
+	mux.HandleFunc("/api/records", handleRecords)
+	mux.HandleFunc("/api/triggers", handleTriggers)
+	mux.HandleFunc("/api/execobjects", handleExecObjects)
+	mux.HandleFunc("/api/forensics", handleForensics)
+	mux.HandleFunc("/api/timeline", handleTimeline)
+	mux.HandleFunc("/api/chains", handleChains)
+	mux.HandleFunc("/api/indicators", handleIndicators)
+	mux.HandleFunc("/api/proctree", handleProcTree)
+	mux.HandleFunc("/api/events", handleEvents)
+	mux.HandleFunc("/api/modules", handleModules)
+	mux.HandleFunc("/api/memory/analyze", handleMemoryAnalyze)
+	mux.HandleFunc("/api/ioc/load", handleIOCLoad)
+	mux.HandleFunc("/api/ioc/start", handleIOCStart)
+	mux.HandleFunc("/api/ioc/stop", handleIOCStop)
+	mux.HandleFunc("/api/ioc/status", handleIOCStatus)
+	mux.HandleFunc("/api/ioc/hits", handleIOCHits)
+	mux.HandleFunc("/api/yara/upload", handleYaraUpload)
+	mux.HandleFunc("/api/yara/loadpath", handleYaraLoadPath)
+	mux.HandleFunc("/api/yara/status", handleYaraStatus)
+	mux.HandleFunc("/api/yara/scanall", handleYaraScanAll)
+	mux.HandleFunc("/api/yara/scanone", handleYaraScanOne)
+	mux.HandleFunc("/api/yara/progress", handleYaraProgress)
+	mux.HandleFunc("/api/yara/results", handleYaraResults)
+	mux.HandleFunc("/api/export", handleExport)
+	mux.HandleFunc("/api/opendir", handleOpenDir)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		log.Fatal("Failed to start server:", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	fmt.Printf("ProcIR started at %s\n", url)
+	exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	log.Fatal(http.Serve(listener, mux))
+}
+
+func handleIndex(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(indexHTML))
+}
+
+func handleScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	scanMu.Lock()
+	if scanning {
+		scanMu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"status": "already_scanning"})
+		return
+	}
+	scanning = true
+	scanMu.Unlock()
+
+	result := scoring.Scan(nil)
+
+	scanMu.Lock()
+	lastResult = result
+	scanning = false
+	scanMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":      "done",
+		"processes":   len(result.Records),
+		"triggers":    len(result.Triggers),
+		"forensics":   len(result.Forensics),
+		"execObjects": len(result.ExecObjects),
+		"timeline":    len(result.Correlation.Timeline),
+		"chains":      len(result.Correlation.Chains),
+		"indicators":  len(result.Correlation.Indicators),
+		"events":      len(result.EventResults),
+		"modules":     len(result.ModuleAnalyses),
+	})
+}
+
+func handleRecords(w http.ResponseWriter, r *http.Request)     { jsonResult(w, func(res *scoring.ScanResult) any { return res.Records }) }
+func handleTriggers(w http.ResponseWriter, r *http.Request)    { jsonResult(w, func(res *scoring.ScanResult) any { return res.Triggers }) }
+func handleExecObjects(w http.ResponseWriter, r *http.Request) { jsonResult(w, func(res *scoring.ScanResult) any { return res.ExecObjects }) }
+func handleForensics(w http.ResponseWriter, r *http.Request)   { jsonResult(w, func(res *scoring.ScanResult) any { return res.Forensics }) }
+func handleTimeline(w http.ResponseWriter, r *http.Request)    { jsonCorrelation(w, func(c *types.CorrelationResult) any { return c.Timeline }) }
+func handleChains(w http.ResponseWriter, r *http.Request)      { jsonCorrelation(w, func(c *types.CorrelationResult) any { return c.Chains }) }
+func handleIndicators(w http.ResponseWriter, r *http.Request)  { jsonCorrelation(w, func(c *types.CorrelationResult) any { return c.Indicators }) }
+func handleProcTree(w http.ResponseWriter, r *http.Request)    { jsonCorrelation(w, func(c *types.CorrelationResult) any { return c.ProcessTree }) }
+func handleEvents(w http.ResponseWriter, r *http.Request)      { jsonResult(w, func(res *scoring.ScanResult) any { return res.EventResults }) }
+func handleModules(w http.ResponseWriter, r *http.Request)     { jsonResult(w, func(res *scoring.ScanResult) any { return res.ModuleAnalyses }) }
+
+func jsonResult(w http.ResponseWriter, fn func(*scoring.ScanResult) any) {
+	scanMu.Lock()
+	result := lastResult
+	scanMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	if result == nil { json.NewEncoder(w).Encode([]any{}); return }
+	json.NewEncoder(w).Encode(fn(result))
+}
+
+func jsonCorrelation(w http.ResponseWriter, fn func(*types.CorrelationResult) any) {
+	scanMu.Lock()
+	result := lastResult
+	scanMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	if result == nil || result.Correlation == nil { json.NewEncoder(w).Encode([]any{}); return }
+	json.NewEncoder(w).Encode(fn(result.Correlation))
+}
+
+// --- IOC Monitor APIs ---
+
+func handleIOCLoad(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" { http.Error(w, "Method not allowed", 405); return }
+	var req struct{ Text string `json:"text"` }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Text == "" {
+		http.Error(w, "Bad request", 400); return
+	}
+	mon := iocmonitor.GetMonitor()
+	count := mon.LoadIOCs(req.Text)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "count": count})
+}
+
+func handleIOCStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" { http.Error(w, "Method not allowed", 405); return }
+	var req struct{ Duration int `json:"duration"` }
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Duration <= 0 { req.Duration = 600 } // default 10min
+
+	mon := iocmonitor.GetMonitor()
+	err := mon.Start(req.Duration)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func handleIOCStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" { http.Error(w, "Method not allowed", 405); return }
+	iocmonitor.GetMonitor().Stop()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func handleIOCStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(iocmonitor.GetMonitor().Status())
+}
+
+func handleIOCHits(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(iocmonitor.GetMonitor().Hits())
+}
+
+// --- Memory Analysis API ---
+
+func handleMemoryAnalyze(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	var req struct {
+		PID uint32 `json:"pid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.PID == 0 {
+		http.Error(w, "Bad request: need pid", 400)
+		return
+	}
+
+	// Lookup process info from scan results
+	procName, procPath, user, signed, signer := "", "", "", false, ""
+	scanMu.Lock()
+	if lastResult != nil {
+		for _, rec := range lastResult.Records {
+			if rec.PID == req.PID {
+				procName = rec.Name
+				procPath = rec.Path
+				user = rec.User
+				signed = rec.Signed
+				signer = rec.Signer
+				break
+			}
+		}
+	}
+	scanMu.Unlock()
+
+	result := memory.Analyze(req.PID, procName, procPath, user, signed, signer)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// --- YARA APIs ---
+
+// handleYaraUpload accepts file upload of .yar/.yara rules
+func handleYaraUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	r.ParseMultipartForm(10 << 20) // 10MB max
+
+	file, header, err := r.FormFile("rulefile")
+	if err != nil {
+		http.Error(w, "文件上传失败", 400)
+		return
+	}
+	defer file.Close()
+
+	// Save to temp dir
+	tmpDir := filepath.Join(os.TempDir(), "procir_yara")
+	os.MkdirAll(tmpDir, 0755)
+	dstPath := filepath.Join(tmpDir, header.Filename)
+
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		jsonErr(w, "创建临时文件失败")
+		return
+	}
+	io.Copy(dst, file)
+	dst.Close()
+
+	count, err := loadYaraRules(dstPath)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": fmt.Sprintf("%v", err)})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "rules": count, "path": dstPath, "filename": header.Filename})
+}
+
+// handleYaraLoadPath loads rules from a local path
+func handleYaraLoadPath(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	var req struct{ Path string `json:"path"` }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Path == "" {
+		http.Error(w, "Bad request", 400)
+		return
+	}
+	count, err := loadYaraRules(req.Path)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": fmt.Sprintf("%v", err)})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "rules": count, "path": req.Path})
+}
+
+// handleYaraStatus returns current YARA engine status
+func handleYaraStatus(w http.ResponseWriter, r *http.Request) {
+	e := scoring.YaraEngine
+	w.Header().Set("Content-Type", "application/json")
+	if e == nil || !e.Enabled() {
+		json.NewEncoder(w).Encode(map[string]any{"loaded": false})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{
+		"loaded": true,
+		"rules":  e.RuleCount(),
+		"errors": e.Errors(),
+	})
+}
+
+// handleYaraScanAll triggers full YARA scan with progress tracking
+func handleYaraScanAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	engine := scoring.YaraEngine
+	if engine == nil || !engine.Enabled() {
+		jsonErr(w, "YARA未加载，请先加载规则")
+		return
+	}
+
+	scanMu.Lock()
+	result := lastResult
+	scanMu.Unlock()
+	if result == nil || len(result.ExecObjects) == 0 {
+		jsonErr(w, "请先执行系统扫描")
+		return
+	}
+
+	if yaraRunning.Load() == 1 {
+		jsonErr(w, "YARA扫描正在进行中")
+		return
+	}
+
+	// Count scannable objects
+	var targets []*types.ExecutionObject
+	for _, obj := range result.ExecObjects {
+		if obj.Path != "" && obj.Exists {
+			targets = append(targets, obj)
+		}
+	}
+
+	yaraProgress.Store(0)
+	yaraTotal.Store(int64(len(targets)))
+	yaraRunning.Store(1)
+
+	// Run in background
+	go func() {
+		defer yaraRunning.Store(0)
+
+		for i, obj := range targets {
+			yaraProgress.Store(int64(i + 1))
+
+			hits := engine.ScanSingleFile(obj.Path)
+			if len(hits) > 0 {
+				obj.YaraMatched = true
+				obj.YaraHits = hits
+
+				yaraScore := 0
+				for _, hit := range hits {
+					ruleScore := 20
+					for _, tag := range hit.Tags {
+						tl := strings.ToLower(tag)
+						if tl == "backdoor" || tl == "trojan" || tl == "ransomware" ||
+							tl == "loader" || tl == "inject" || tl == "beacon" ||
+							tl == "webshell" || tl == "rat" || tl == "malware" {
+							ruleScore = 30
+							break
+						}
+					}
+					yaraScore += ruleScore
+					obj.Reasons = append(obj.Reasons, "[YARA] "+hit.RuleName)
+				}
+				if len(hits) >= 2 {
+					yaraScore += 15
+				}
+				obj.YaraScore = yaraScore
+				obj.FinalScore += yaraScore
+				obj.RiskLevel = types.CalcRiskLevel(obj.FinalScore)
+			}
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "total": len(targets)})
+}
+
+// handleYaraProgress returns current scan progress
+func handleYaraProgress(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"running":  yaraRunning.Load() == 1,
+		"current":  yaraProgress.Load(),
+		"total":    yaraTotal.Load(),
+	})
+}
+
+// handleYaraResults returns all YARA-matched objects
+func handleYaraResults(w http.ResponseWriter, r *http.Request) {
+	scanMu.Lock()
+	result := lastResult
+	scanMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	if result == nil {
+		json.NewEncoder(w).Encode([]any{})
+		return
+	}
+
+	type yaraResultItem struct {
+		Path      string        `json:"Path"`
+		IsRunning bool          `json:"IsRunning"`
+		Signed    bool          `json:"Signed"`
+		Signer    string        `json:"Signer"`
+		Location  string        `json:"Location"`
+		Score     int           `json:"Score"`
+		YaraScore int           `json:"YaraScore"`
+		RiskLevel string        `json:"RiskLevel"`
+		Hits      interface{}   `json:"Hits"`
+		HitCount  int           `json:"HitCount"`
+		Reasons   []string      `json:"Reasons"`
+	}
+
+	var items []yaraResultItem
+	for _, obj := range result.ExecObjects {
+		if !obj.YaraMatched {
+			continue
+		}
+		items = append(items, yaraResultItem{
+			Path:      obj.Path,
+			IsRunning: obj.IsRunning,
+			Signed:    obj.Signed,
+			Signer:    obj.Signer,
+			Location:  obj.LocationType,
+			Score:     obj.FinalScore,
+			YaraScore: obj.YaraScore,
+			RiskLevel: obj.RiskLevel,
+			Hits:      obj.YaraHits,
+			HitCount:  obj.YaraScore / 20, // approximate
+			Reasons:   obj.Reasons,
+		})
+	}
+	json.NewEncoder(w).Encode(items)
+}
+
+// handleYaraScanOne scans a single file
+func handleYaraScanOne(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	var req struct{ Path string `json:"path"` }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Path == "" {
+		http.Error(w, "Bad request", 400)
+		return
+	}
+	engine := scoring.YaraEngine
+	if engine == nil || !engine.Enabled() {
+		jsonErr(w, "YARA未加载")
+		return
+	}
+	hits := engine.ScanSingleFile(req.Path)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "hits": hits, "count": len(hits)})
+}
+
+func loadYaraRules(path string) (int, error) {
+	engine := yara.NewEngine(path)
+	if engine == nil || !engine.Enabled() {
+		return 0, fmt.Errorf("加载失败: 没有有效规则")
+	}
+	scoring.YaraEngine = engine
+	return engine.RuleCount(), nil
+}
+
+func jsonErr(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": msg})
+}
+
+// --- Export & Open Dir ---
+
+func handleExport(w http.ResponseWriter, r *http.Request) {
+	scanMu.Lock()
+	result := lastResult
+	scanMu.Unlock()
+	if result == nil || len(result.Records) == 0 {
+		http.Error(w, "No scan data", 400)
+		return
+	}
+
+	filename := fmt.Sprintf("procir_scan_%s.csv", time.Now().Format("20060102_150405"))
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+	w.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	csvW := csv.NewWriter(w)
+	csvW.Write([]string{
+		"RiskLevel", "RiskScore", "Process", "PID", "PPID", "ParentName",
+		"Path", "CommandLine", "User", "StartTime",
+		"SHA256", "MD5", "Signed", "SignValid", "Signer",
+		"Company", "Product", "OriginalName",
+		"HasNetwork", "RemoteIPs", "HasPublicIP",
+		"Persistence", "Reasons",
+	})
+	for _, rec := range result.Records {
+		csvW.Write([]string{
+			rec.RiskLevel, strconv.Itoa(rec.RiskScore), rec.Name,
+			strconv.Itoa(int(rec.PID)), strconv.Itoa(int(rec.PPID)), rec.ParentName,
+			rec.Path, rec.CommandLine, rec.User, rec.StartTime,
+			rec.SHA256, rec.MD5,
+			strconv.FormatBool(rec.Signed), strconv.FormatBool(rec.SignValid), rec.Signer,
+			rec.Company, rec.Product, rec.OriginalName,
+			strconv.FormatBool(rec.HasNetwork), strings.Join(rec.RemoteIPs, ";"), strconv.FormatBool(rec.HasPublicIP),
+			strings.Join(rec.Persistence, ";"), strings.Join(rec.Reasons, ";"),
+		})
+	}
+	csvW.Flush()
+}
+
+func handleOpenDir(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	var req struct{ Path string `json:"path"` }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Path == "" {
+		http.Error(w, "Bad request", 400)
+		return
+	}
+	dir := req.Path
+	if idx := strings.LastIndex(dir, `\`); idx >= 0 {
+		dir = dir[:idx]
+	}
+	if _, err := os.Stat(dir); err != nil {
+		jsonErr(w, "目录不存在")
+		return
+	}
+	exec.Command("explorer.exe", dir).Start()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
