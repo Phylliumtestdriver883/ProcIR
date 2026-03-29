@@ -30,9 +30,13 @@ func T(key string) string {
 		if v, ok := en[key]; ok {
 			return v
 		}
-	}
-	if v, ok := zh[key]; ok {
-		return v
+		if v, ok := zh[key]; ok {
+			return v
+		}
+	} else {
+		if v, ok := zh[key]; ok {
+			return v
+		}
 	}
 	return key
 }

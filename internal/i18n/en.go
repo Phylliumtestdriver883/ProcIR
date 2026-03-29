@@ -131,10 +131,10 @@ var en = map[string]string{
 	"evtc_explicit_cred":       "Explicit credential logon: %s → %s@%s",
 	"evtc_priv_logon":          "Privileged logon: %s\\%s",
 	"evtc_svc_install_sys":     "Service installed: %s [type:%s start:%s]",
-	"evtc_ps_scriptblock":      "PowerShell script block: ",
+	"evtc_ps_scriptblock":      "PowerShell script block: %s",
 	"evtc_task_register":       "Scheduled task registered",
 	"evtc_task_execute":        "Scheduled task executed",
-	"evtc_wmi_operation":       "WMI operation: ",
+	"evtc_wmi_operation":       "WMI operation: %s",
 	"evtc_sysmon_proc":         "Sysmon process creation: %s → %s",
 	"evtc_sysmon_net":          "Sysmon network connection: %s → %s:%s",
 	"evtc_sysmon_module":       "Sysmon module load: %s loaded %s",
@@ -368,7 +368,7 @@ var en = map[string]string{
 	"api_need_key_model_msg":   "Please provide API Key, select model, and send a message",
 
 	// === cmd/main.go ===
-	"cli_yara_loaded":          "YARA loaded: %d rules (%s)\n",
-	"cli_warning":              "Warning: %s\n",
-	"cli_yara_fail":            "YARA rules loading failed: %s\n",
+	"cli_yara_loaded":          "YARA loaded: %d rules (%s)",
+	"cli_warning":              "Warning: %s",
+	"cli_yara_fail":            "YARA rules loading failed: %s",
 }

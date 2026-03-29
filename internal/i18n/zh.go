@@ -131,10 +131,10 @@ var zh = map[string]string{
 	"evtc_explicit_cred":       "显式凭证登录: %s → %s@%s",
 	"evtc_priv_logon":          "特权登录: %s\\%s",
 	"evtc_svc_install_sys":     "服务安装: %s [类型:%s 启动:%s]",
-	"evtc_ps_scriptblock":      "PowerShell脚本块: ",
+	"evtc_ps_scriptblock":      "PowerShell脚本块: %s",
 	"evtc_task_register":       "计划任务注册",
 	"evtc_task_execute":        "计划任务执行",
-	"evtc_wmi_operation":       "WMI操作: ",
+	"evtc_wmi_operation":       "WMI操作: %s",
 	"evtc_sysmon_proc":         "Sysmon进程创建: %s → %s",
 	"evtc_sysmon_net":          "Sysmon网络连接: %s → %s:%s",
 	"evtc_sysmon_module":       "Sysmon模块加载: %s 加载 %s",
@@ -369,7 +369,7 @@ var zh = map[string]string{
 	"api_need_key_model_msg":   "请填写API Key、选择模型并发送消息",
 
 	// === cmd/main.go ===
-	"cli_yara_loaded":          "YARA 已加载: %d 条规则 (%s)\n",
-	"cli_warning":              "警告: %s\n",
-	"cli_yara_fail":            "YARA 规则加载失败: %s\n",
+	"cli_yara_loaded":          "YARA 已加载: %d 条规则 (%s)",
+	"cli_warning":              "警告: %s",
+	"cli_yara_fail":            "YARA 规则加载失败: %s",
 }

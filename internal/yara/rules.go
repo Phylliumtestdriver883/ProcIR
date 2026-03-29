@@ -69,7 +69,7 @@ func LoadRules(path string) (*RuleSet, error) {
 			if ext == ".yar" || ext == ".yara" || ext == ".rule" {
 				data, err := os.ReadFile(filepath.Join(path, entry.Name()))
 				if err != nil {
-					rs.Errors = append(rs.Errors, fmt.Sprintf(i18n.T("yara_read_fail")+" %s: %v", entry.Name(), err))
+					rs.Errors = append(rs.Errors, fmt.Sprintf(i18n.T("yara_read_fail"), entry.Name(), err))
 					continue
 				}
 				rules, errs := parseRules(string(data))
