@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -62,6 +63,7 @@ func Run() {
 	mux.HandleFunc("/api/yara/scanone", handleYaraScanOne)
 	mux.HandleFunc("/api/yara/progress", handleYaraProgress)
 	mux.HandleFunc("/api/yara/results", handleYaraResults)
+	mux.HandleFunc("/api/ai/analyze", handleAIAnalyze)
 	mux.HandleFunc("/api/export", handleExport)
 	mux.HandleFunc("/api/opendir", handleOpenDir)
 
@@ -539,4 +541,110 @@ func handleOpenDir(w http.ResponseWriter, r *http.Request) {
 	exec.Command("explorer.exe", dir).Start()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+// --- AI Analysis API (MiniMax) ---
+
+func handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		APIKey   string           `json:"apiKey"`
+		Model    string           `json:"model"`
+		Messages []map[string]string `json:"messages"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad request", 400)
+		return
+	}
+	if req.APIKey == "" || req.Model == "" || len(req.Messages) == 0 {
+		jsonErr(w, "请填写API Key、选择模型并发送消息")
+		return
+	}
+
+	apiBody := map[string]any{
+		"model":      req.Model,
+		"messages":   req.Messages,
+		"temperature": 0.1,
+		"max_tokens": 16384,
+	}
+
+	bodyJSON, err := json.Marshal(apiBody)
+	if err != nil {
+		jsonErr(w, "构建请求失败")
+		return
+	}
+
+	apiReq, err := http.NewRequest("POST", "https://api.minimaxi.com/v1/chat/completions", bytes.NewReader(bodyJSON))
+	if err != nil {
+		jsonErr(w, "创建请求失败")
+		return
+	}
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("Authorization", "Bearer "+req.APIKey)
+
+	client := &http.Client{Timeout: 180 * time.Second}
+	resp, err := client.Do(apiReq)
+	if err != nil {
+		jsonErr(w, "请求MiniMax API失败: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		jsonErr(w, "读取响应失败")
+		return
+	}
+
+	if resp.StatusCode != 200 {
+		jsonErr(w, fmt.Sprintf("MiniMax API返回错误(%d): %s", resp.StatusCode, string(respBody)))
+		return
+	}
+
+	var apiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+		Usage struct {
+			TotalTokens      int `json:"total_tokens"`
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
+		BaseResp struct {
+			StatusCode int    `json:"status_code"`
+			StatusMsg  string `json:"status_msg"`
+		} `json:"base_resp"`
+	}
+
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "content": string(respBody), "raw": true})
+		return
+	}
+
+	if apiResp.BaseResp.StatusCode != 0 {
+		jsonErr(w, fmt.Sprintf("MiniMax API错误(%d): %s", apiResp.BaseResp.StatusCode, apiResp.BaseResp.StatusMsg))
+		return
+	}
+
+	content := ""
+	if len(apiResp.Choices) > 0 {
+		content = apiResp.Choices[0].Message.Content
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":               true,
+		"content":          content,
+		"totalTokens":      apiResp.Usage.TotalTokens,
+		"promptTokens":     apiResp.Usage.PromptTokens,
+		"completionTokens": apiResp.Usage.CompletionTokens,
+	})
 }

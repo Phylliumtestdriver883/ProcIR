@@ -183,6 +183,7 @@ tr.risk-low { border-left: 3px solid #4caf50; opacity: 0.7; }
   <div class="tab" onclick="switchView('yara')" id="tab_yara">YARA</div>
   <div class="tab" onclick="switchView('memory')" id="tab_memory">内存分析</div>
   <div class="tab" onclick="switchView('iocmon')" id="tab_iocmon">IOC监控</div>
+  <div class="tab" onclick="switchView('ai')" id="tab_ai">AI分析</div>
 </div>
 
 <div class="filter-bar">
@@ -485,6 +486,52 @@ tr.risk-low { border-left: 3px solid #4caf50; opacity: 0.7; }
   </div>
 </div>
 
+<!-- AI Analysis View -->
+<div class="view-panel" id="view_ai">
+  <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+    <!-- Top bar: config -->
+    <div style="background:#16213e;padding:10px 16px;flex-shrink:0;border-bottom:1px solid #0f3460">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="color:#e94560;margin:0;white-space:nowrap;font-size:14px">MiniMax AI</h3>
+        <span id="aiStatusBadge" style="padding:2px 8px;border-radius:10px;font-size:11px;background:#333;color:#888">就绪</span>
+        <div class="separator"></div>
+        <label style="white-space:nowrap;font-size:12px">API Key:</label>
+        <input id="aiApiKey" type="password" placeholder="输入MiniMax API Key" style="width:220px;padding:4px 8px;background:#1a1a2e;border:1px solid #0f3460;color:#e0e0e0;border-radius:4px;font-size:12px;font-family:Consolas,monospace">
+        <label style="white-space:nowrap;font-size:12px">模型:</label>
+        <select id="aiModel" style="padding:4px 6px;background:#1a1a2e;border:1px solid #0f3460;color:#e0e0e0;border-radius:4px;font-size:12px">
+          <option value="MiniMax-M2.5">M2.5</option>
+          <option value="MiniMax-M2.5-highspeed">M2.5 高速</option>
+          <option value="MiniMax-M2.7" selected>M2.7</option>
+          <option value="MiniMax-M2.7-highspeed">M2.7 高速</option>
+        </select>
+        <label style="font-size:11px;color:#666;cursor:pointer"><input type="checkbox" id="aiSaveKey" onchange="toggleAISaveKey()" style="margin-right:3px">记住Key</label>
+        <div style="flex:1"></div>
+        <span id="aiTokenCounter" style="font-size:11px;color:#555"></span>
+        <button class="btn" onclick="clearAIChat()" style="padding:4px 10px;font-size:12px">清空对话</button>
+      </div>
+    </div>
+    <!-- Chat messages area -->
+    <div id="aiChatArea" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+      <div id="aiWelcome" style="text-align:center;padding:40px 20px;color:#666">
+        <div style="font-size:16px;margin-bottom:12px;color:#e94560">MiniMax AI 安全分析助手</div>
+        <div style="margin-bottom:8px">您可以直接输入问题，或点击下方「发送扫描数据」将扫描结果发送给AI分析</div>
+        <div style="font-size:11px;color:#555">支持多轮对话 | M2.5 / M2.7 模型 | 申请Key: platform.minimax.io</div>
+      </div>
+    </div>
+    <!-- Input area -->
+    <div style="background:#16213e;padding:12px 16px;flex-shrink:0;border-top:1px solid #0f3460">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="btn" onclick="sendScanData()" style="padding:4px 10px;font-size:12px">发送扫描数据</button>
+        <button class="btn" onclick="sendScanDataBrief()" style="padding:4px 10px;font-size:12px">发送摘要</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="aiInput" rows="2" placeholder="输入消息... (Ctrl+Enter 发送)" style="flex:1;padding:8px 10px;background:#1a1a2e;border:1px solid #0f3460;color:#e0e0e0;border-radius:6px;font-size:13px;font-family:inherit;resize:none;line-height:1.5" onkeydown="aiInputKeydown(event)"></textarea>
+        <button class="btn btn-primary" id="aiSendBtn" onclick="sendAIMessage()" style="padding:8px 20px;height:fit-content">发送</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="status-bar">
   <div id="statusText">就绪 - 点击「开始扫描」</div>
   <div class="stats" id="statsText"></div>
@@ -671,6 +718,7 @@ function toggleSort(view, field, prefix) {
 }
 
 function render() {
+  if (currentView === 'ai' || currentView === 'yara' || currentView === 'memory' || currentView === 'iocmon') return;
   const renderers = {process:renderProc, trigger:renderTrig, execobj:renderExec, forensic:renderFore, timeline:renderTL, chain:renderChain, ioc:renderIOC, event:renderEvt, module:renderMod};
   (renderers[currentView]||renderProc)();
   const totals = {process:allProc.length, trigger:allTrig.length, execobj:allExec.length, forensic:allFore.length, timeline:allTL.length, chain:allChain.length, ioc:allIOC.length, event:allEvt.length, module:allMod.length};
@@ -1562,6 +1610,321 @@ function sec(title, rows) {
 function closeModal(e) { if (e.target===document.getElementById('modalOverlay')) document.getElementById('modalOverlay').classList.remove('show'); }
 document.addEventListener('keydown', e => { if (e.key==='Escape') { document.getElementById('modalOverlay').classList.remove('show'); document.getElementById('ctxMenu').classList.remove('show'); } });
 function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// --- AI Chat Logic ---
+
+const AI_SYSTEM_PROMPT = '你是资深Windows应急响应专家。用户是安全工程师，使用ProcIR工具排查。回复要求：\n1. 极度精简，不要废话，不要解释基础概念\n2. 直接给结论：有威胁/无威胁/需关注\n3. 用表格或列表呈现，每条一行：进程名+判定+原因\n4. 只报告真正可疑的，正常系统进程不用提\n5. 处置建议只写具体动作，如「kill PID xxx」「删除该计划任务」「排查该外连IP」\n6. 如果没有明显威胁，直接说「未发现明显威胁」，不要凑字数';
+let aiChatHistory = []; // {role, content} array for context
+let aiTotalTokens = 0;
+let aiSending = false;
+
+(function() {
+  const saved = localStorage.getItem('procir_minimax_key');
+  if (saved) { document.getElementById('aiApiKey').value = saved; document.getElementById('aiSaveKey').checked = true; }
+})();
+
+function toggleAISaveKey() {
+  if (document.getElementById('aiSaveKey').checked) {
+    const key = document.getElementById('aiApiKey').value;
+    if (key) localStorage.setItem('procir_minimax_key', key);
+  } else {
+    localStorage.removeItem('procir_minimax_key');
+  }
+}
+
+function aiInputKeydown(e) {
+  if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); sendAIMessage(); }
+}
+
+function renderAIMd(text) {
+  let h = esc(text);
+  h = h.replace(/^### (.+)$/gm, '<h4 style="color:#e94560;margin:12px 0 6px 0;font-size:13px">$1</h4>');
+  h = h.replace(/^## (.+)$/gm, '<h3 style="color:#e94560;margin:14px 0 8px 0;font-size:14px;border-bottom:1px solid #0f3460;padding-bottom:4px">$1</h3>');
+  h = h.replace(/^# (.+)$/gm, '<h2 style="color:#e94560;margin:16px 0 10px 0;font-size:15px">$1</h2>');
+  h = h.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#ffd600">$1</strong>');
+  h = h.replace(/^(\d+)\. (.+)$/gm, '<div style="padding:1px 0 1px 18px"><span style="color:#e94560">$1.</span> $2</div>');
+  h = h.replace(/^- (.+)$/gm, '<div style="padding:1px 0 1px 14px"><span style="color:#64b5f6;margin-right:5px">&#8226;</span>$1</div>');
+  h = h.replace(/\n{2,}/g, '<div style="height:8px"></div>');
+  h = h.replace(/\n/g, '<br>');
+  return h;
+}
+
+function appendChatBubble(role, content, isLoading) {
+  const area = document.getElementById('aiChatArea');
+  const welcome = document.getElementById('aiWelcome');
+  if (welcome) welcome.style.display = 'none';
+
+  const bubble = document.createElement('div');
+  bubble.style.cssText = 'display:flex;gap:10px;' + (role==='user' ? 'flex-direction:row-reverse' : '');
+
+  const avatar = document.createElement('div');
+  avatar.style.cssText = 'width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;';
+  if (role === 'user') {
+    avatar.style.background = '#0f3460'; avatar.textContent = 'U';
+  } else {
+    avatar.style.background = '#e94560'; avatar.textContent = 'AI';
+  }
+
+  const msg = document.createElement('div');
+  msg.style.cssText = 'max-width:75%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.7;word-break:break-word;';
+  if (role === 'user') {
+    msg.style.background = '#0f3460'; msg.style.color = '#e0e0e0';
+    msg.textContent = content;
+  } else {
+    msg.style.background = '#1e2a4a'; msg.style.color = '#e0e0e0';
+    if (isLoading) {
+      msg.innerHTML = '<span style="color:#ffd600">思考中...</span>';
+      msg.id = 'aiLoadingBubble';
+    } else {
+      msg.innerHTML = renderAIMd(content);
+    }
+  }
+
+  bubble.appendChild(avatar);
+  bubble.appendChild(msg);
+  area.appendChild(bubble);
+  area.scrollTop = area.scrollHeight;
+  return msg;
+}
+
+function buildScanDataFull() {
+  let p = '以下是ProcIR扫描结果，请进行全面安全分析：\n\n';
+
+  let c=0,h=0,m=0,s=0;
+  allProc.forEach(r => { switch(r.RiskLevel){ case 'Critical':c++;break; case 'High':h++;break; case 'Medium':m++;break; case 'Suspicious':s++;break; } });
+  p += '## 总体统计\n';
+  p += '进程:' + allProc.length + ' (严重:'+c+' 高危:'+h+' 中危:'+m+' 可疑:'+s+') | 触发器:' + allTrig.length + ' | 行为链:' + allChain.length + ' | IOC:' + allIOC.length + ' | 事件:' + allEvt.length + '\n\n';
+
+  const highRisk = allProc.filter(r => r.RiskLevel==='Critical' || r.RiskLevel==='High');
+  if (highRisk.length > 0) {
+    p += '## 高风险进程 (' + highRisk.length + '个)\n';
+    highRisk.slice(0, 30).forEach(r => {
+      p += '- [' + r.RiskLevel + '/' + r.RiskScore + '] ' + r.Name + ' PID:' + r.PID;
+      if (r.Path) p += ' ' + r.Path;
+      if (r.Signer) p += ' 签名:' + r.Signer; else p += ' [未签名]';
+      if (r.HasPublicIP) p += ' [公网]';
+      if (r.IsLOLBin) p += ' [LOLBin]';
+      if ((r.Reasons||[]).length) p += ' | ' + r.Reasons.join('; ');
+      if (r.CommandLine) p += '\n  CMD: ' + r.CommandLine;
+      p += '\n';
+    });
+    p += '\n';
+  }
+
+  const medRisk = allProc.filter(r => r.RiskLevel==='Medium');
+  if (medRisk.length > 0) {
+    p += '## 中危进程 (' + medRisk.length + '个)\n';
+    medRisk.slice(0, 15).forEach(r => {
+      p += '- [' + r.RiskScore + '] ' + r.Name + ' PID:' + r.PID + ' ' + (r.Path||'');
+      if ((r.Reasons||[]).length) p += ' | ' + r.Reasons.join('; ');
+      p += '\n';
+    });
+    p += '\n';
+  }
+
+  const highTrig = allTrig.filter(t => t.Score >= 20).sort((a,b) => b.Score - a.Score);
+  if (highTrig.length > 0) {
+    p += '## 可疑触发器 (' + highTrig.length + '个)\n';
+    highTrig.slice(0, 20).forEach(t => {
+      p += '- [' + t.Score + '][' + (TT[t.Type]||t.Type) + '] ' + t.Name;
+      if (t.Path) p += ' ' + t.Path;
+      if (t.CommandLine) p += ' CMD:' + t.CommandLine;
+      if ((t.Reasons||[]).length) p += ' | ' + t.Reasons.join('; ');
+      p += '\n';
+    });
+    p += '\n';
+  }
+
+  if (allChain.length > 0) {
+    p += '## 行为链\n';
+    allChain.forEach(c => {
+      p += '- [' + c.PatternScore + '] ' + c.PatternName + ': ' + (c.Evidence||[]).join(' -> ');
+      p += '\n';
+    });
+    p += '\n';
+  }
+
+  if (allIOC.length > 0) {
+    p += '## IOC (' + allIOC.length + '个)\n';
+    allIOC.slice(0, 30).forEach(i => {
+      p += '- [' + (IOT[i.Type]||i.Type) + '] ' + i.Value + (i.SourceObject?' ('+i.SourceObject+')':'') + '\n';
+    });
+    p += '\n';
+  }
+
+  // 执行对象（融合视图，包含多维度评分）
+  const highExec = allExec.filter(e => e.FinalScore >= 40).sort((a,b) => b.FinalScore - a.FinalScore);
+  if (highExec.length > 0) {
+    p += '## 高危执行对象 (' + highExec.length + '个)\n';
+    highExec.slice(0, 20).forEach(e => {
+      p += '- [' + (e.RiskLevel||'?') + '/' + e.FinalScore + '] ' + (e.Path||'?');
+      p += ' ' + (e.IsRunning?'[运行中]':'[未运行]');
+      if (e.Signed) p += ' 签名:' + (e.Signer||'是'); else p += ' [未签名]';
+      if (e.TriggerCount>0) p += ' 触发器:' + e.TriggerCount + '(' + (e.TriggerTypes||[]).map(t=>TT[t]||t).join('+') + ')';
+      if (e.NetworkObserved) p += ' [有网络]';
+      if (e.HasPublicIP) p += ' [公网]';
+      if (e.YaraMatched) p += ' [YARA命中]';
+      if (e.HasDLLHijack) p += ' [DLL劫持]';
+      p += ' 评分构成:执行' + e.ExecutionScore + '/触发' + e.TriggerScore + '/取证' + e.ForensicScore + '/事件' + e.EventScore + '/模块' + e.DLLHijackScore;
+      if ((e.Reasons||[]).length) p += '\n  原因: ' + e.Reasons.join('; ');
+      p += '\n';
+    });
+    p += '\n';
+  }
+
+  // 模块分析（DLL劫持检测）
+  const suspMod = allMod.filter(m => m.Score >= 20 || m.HasDLLHijack).sort((a,b) => b.Score - a.Score);
+  if (suspMod.length > 0) {
+    p += '## 可疑模块/DLL劫持 (' + suspMod.length + '个)\n';
+    suspMod.slice(0, 15).forEach(m => {
+      p += '- [' + m.Score + '] ' + m.ExeName + '(PID:' + m.PID + ') ' + (m.ExePath||'');
+      if (m.HasDLLHijack) p += ' [DLL劫持]';
+      p += ' 可疑DLL:' + m.SuspiciousCount + '/' + m.TotalModules;
+      if (!m.ExeSigned) p += ' [宿主未签名]';
+      if ((m.Reasons||[]).length) p += ' | ' + m.Reasons.join('; ');
+      p += '\n';
+    });
+    p += '\n';
+  }
+
+  // 历史取证（Prefetch/最近文件/事件日志/模块）
+  const suspFore = allFore.filter(f => f.Score >= 20).sort((a,b) => b.Score - a.Score);
+  if (suspFore.length > 0) {
+    p += '## 可疑历史取证 (' + suspFore.length + '个)\n';
+    suspFore.slice(0, 15).forEach(f => {
+      const srcCN = FS[f.Source] || f.Source;
+      p += '- [' + f.Score + '][' + srcCN + '] ' + (f.Path||f.Detail||'');
+      const t = f.EventTime || f.LastRunTime || f.FileModTime || '';
+      if (t) p += ' 时间:' + t;
+      if ((f.Reasons||[]).length) p += ' | ' + f.Reasons.join('; ');
+      p += '\n';
+    });
+    p += '\n';
+  }
+
+  const highEvt = allEvt.filter(e => e.Score >= 30).sort((a,b) => b.Score - a.Score);
+  if (highEvt.length > 0) {
+    p += '## 高危事件 (' + highEvt.length + '个)\n';
+    highEvt.slice(0, 15).forEach(e => {
+      p += '- [' + e.Score + '] EID:' + e.EventID + ' ' + e.Source + ' ' + e.Time + ' ' + (e.Description||'');
+      if ((e.Reasons||[]).length) p += ' | ' + e.Reasons.join('; ');
+      p += '\n';
+    });
+  }
+
+  return p;
+}
+
+function buildScanDataBrief() {
+  let c=0,h=0,m=0,s=0;
+  allProc.forEach(r => { switch(r.RiskLevel){ case 'Critical':c++;break; case 'High':h++;break; case 'Medium':m++;break; case 'Suspicious':s++;break; } });
+  let p = '扫描摘要 - 进程:' + allProc.length + '(严重:'+c+' 高危:'+h+' 中危:'+m+' 可疑:'+s+') 触发器:'+allTrig.length+' 行为链:'+allChain.length+' IOC:'+allIOC.length+'\n\n';
+
+  const top = allProc.filter(r => r.RiskLevel==='Critical' || r.RiskLevel==='High').slice(0,10);
+  if (top.length) {
+    p += '高风险进程:\n';
+    top.forEach(r => { p += '- ' + r.Name + '(PID:'+r.PID+') '+r.RiskLevel+'/'+r.RiskScore + (r.Signer?' '+r.Signer:' [未签名]') + ' ' + ((r.Reasons||[]).join('; ')) + '\n'; });
+  }
+  p += '\n请分析这些结果，有什么安全问题？';
+  return p;
+}
+
+function sendScanData() {
+  if (allProc.length === 0) { flash('请先执行系统扫描'); return; }
+  document.getElementById('aiInput').value = buildScanDataFull();
+  sendAIMessage();
+}
+
+function sendScanDataBrief() {
+  if (allProc.length === 0) { flash('请先执行系统扫描'); return; }
+  document.getElementById('aiInput').value = buildScanDataBrief();
+  sendAIMessage();
+}
+
+async function sendAIMessage() {
+  if (aiSending) return;
+  const input = document.getElementById('aiInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  const apiKey = document.getElementById('aiApiKey').value.trim();
+  if (!apiKey) { flash('请输入MiniMax API Key'); return; }
+
+  if (document.getElementById('aiSaveKey').checked) {
+    localStorage.setItem('procir_minimax_key', apiKey);
+  }
+
+  const model = document.getElementById('aiModel').value;
+  aiSending = true;
+
+  // Add user message
+  aiChatHistory.push({role: 'user', content: text});
+  appendChatBubble('user', text);
+  input.value = '';
+  input.style.height = 'auto';
+
+  // Show loading
+  appendChatBubble('assistant', '', true);
+
+  const btn = document.getElementById('aiSendBtn');
+  const badge = document.getElementById('aiStatusBadge');
+  btn.disabled = true; btn.textContent = '...';
+  badge.textContent = '请求中'; badge.style.background = '#4a3000'; badge.style.color = '#ffd600';
+
+  // Build messages with system prompt
+  const messages = [{role: 'system', content: AI_SYSTEM_PROMPT}, ...aiChatHistory];
+
+  try {
+    const resp = await fetch('/api/ai/analyze', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ apiKey: apiKey, model: model, messages: messages })
+    });
+    const data = await resp.json();
+
+    // Remove loading bubble
+    const loading = document.getElementById('aiLoadingBubble');
+    if (loading) loading.parentElement.remove();
+
+    if (!data.ok) {
+      appendChatBubble('assistant', '(错误: ' + (data.error||'请求失败') + ')');
+      badge.textContent = '失败'; badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
+    } else {
+      const content = data.content || '(无返回)';
+      aiChatHistory.push({role: 'assistant', content: content});
+      appendChatBubble('assistant', content);
+      badge.textContent = '就绪'; badge.style.background = '#1a3a1a'; badge.style.color = '#a5d6a7';
+
+      if (data.totalTokens) {
+        aiTotalTokens += data.totalTokens;
+        document.getElementById('aiTokenCounter').textContent = '本轮:' + (data.promptTokens||0) + '+' + (data.completionTokens||0) + ' | 累计:' + aiTotalTokens;
+      }
+    }
+  } catch(e) {
+    const loading = document.getElementById('aiLoadingBubble');
+    if (loading) loading.parentElement.remove();
+    appendChatBubble('assistant', '(网络错误: ' + e.message + ')');
+    badge.textContent = '出错'; badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
+  }
+
+  aiSending = false;
+  btn.disabled = false; btn.textContent = '发送';
+}
+
+function clearAIChat() {
+  aiChatHistory = [];
+  aiTotalTokens = 0;
+  const area = document.getElementById('aiChatArea');
+  area.innerHTML = '';
+  const welcome = document.createElement('div');
+  welcome.id = 'aiWelcome';
+  welcome.style.cssText = 'text-align:center;padding:40px 20px;color:#666';
+  welcome.innerHTML = '<div style="font-size:16px;margin-bottom:12px;color:#e94560">MiniMax AI 安全分析助手</div><div style="margin-bottom:8px">您可以直接输入问题，或点击下方「发送扫描数据」将扫描结果发送给AI分析</div><div style="font-size:11px;color:#555">支持多轮对话 | M2.5 / M2.7 模型</div>';
+  area.appendChild(welcome);
+  document.getElementById('aiTokenCounter').textContent = '';
+  const badge = document.getElementById('aiStatusBadge');
+  badge.textContent = '就绪'; badge.style.background = '#333'; badge.style.color = '#888';
+}
 </script>
 </body>
 </html>`
