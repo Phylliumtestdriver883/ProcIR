@@ -33,11 +33,11 @@ The traditional approach involves manually running a series of commands (tasklis
 - **Single-file executable**, no installation required, no external dependencies, 11MB
 - **Pure Go implementation**, no CGO, copy-and-run
 - **Non-resident**, exits after scanning, no impact on production
-- **No network required** for core analysis — all scanning is performed locally (AI analysis requires network access: Claude API for English mode, MiniMax API for Chinese mode)
+- **No network required** for core analysis — all scanning is performed locally (AI analysis requires API access)
 - **13 Analysis Views**, covering the full attack surface from processes to memory
 - **AI-Powered Analysis**: Claude API (English) / MiniMax (Chinese) for intelligent threat assessment
 - **Embedded Web UI**, automatically opens a browser, no additional GUI framework needed
-- **Bilingual interface** (Chinese/English) with a toggle button
+- **Full bilingual support** — UI, 400+ detection rules, risk reasons, behavior chains, and all backend output fully translated in both Chinese and English
 
 ---
 
