@@ -315,6 +315,20 @@ func scoreFusion(obj *types.ExecutionObject) {
 		}
 	}
 
+	// Rule 11: User dir + Event + Trigger
+	if isUserLocation(obj.LocationType) && obj.EventScore >= 10 && obj.TriggerCount > 0 {
+		obj.FinalScore += 20
+		obj.Reasons = append(obj.Reasons, i18n.T("fus_userdir_event_trig"))
+	}
+
+	// Rule 12: DLL Abuse + YARA + Network → min 80
+	if obj.HasDLLHijack && obj.YaraMatched && obj.NetworkObserved {
+		if obj.FinalScore < 80 {
+			obj.FinalScore = 80
+		}
+		obj.Reasons = append(obj.Reasons, i18n.T("fus_dll_yara_net"))
+	}
+
 	// --- White Signals ---
 	if obj.Signed && obj.SignValid && context.IsTrustedVendor(obj.Signer, obj.Company) {
 		obj.WhiteReduction += 15
@@ -332,6 +346,17 @@ func scoreFusion(obj *types.ExecutionObject) {
 	}
 	if obj.FinalScore < 0 {
 		obj.FinalScore = 0
+	}
+
+	// Counter-evidence: strongly trusted objects get score suppression
+	if obj.Signed && obj.SignValid && context.IsTrustedVendor(obj.Signer, obj.Company) &&
+		(obj.LocationType == "System32" || obj.LocationType == "ProgramFiles") &&
+		obj.TriggerCount == 0 && obj.EventScore == 0 && !obj.YaraMatched &&
+		obj.ForensicHits == 0 {
+		obj.WhiteReduction += 15
+		if obj.FinalScore > 20 {
+			obj.FinalScore = 20 // cap at Suspicious max
+		}
 	}
 
 	obj.RiskLevel = types.CalcRiskLevel(obj.FinalScore)

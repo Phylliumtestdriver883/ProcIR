@@ -5,48 +5,84 @@ import (
 	"strings"
 )
 
-// LOLBins - Living Off the Land Binaries commonly abused by attackers.
-var lolbins = map[string]bool{
-	"powershell.exe":    true,
-	"pwsh.exe":          true,
-	"cmd.exe":           true,
-	"mshta.exe":         true,
-	"wscript.exe":       true,
-	"cscript.exe":       true,
-	"rundll32.exe":      true,
-	"regsvr32.exe":      true,
-	"msiexec.exe":       true,
-	"certutil.exe":      true,
-	"bitsadmin.exe":     true,
-	"msbuild.exe":       true,
-	"installutil.exe":   true,
-	"regasm.exe":        true,
-	"regsvcs.exe":       true,
-	"wmic.exe":          true,
-	"forfiles.exe":      true,
-	"pcalua.exe":        true,
-	"cmstp.exe":         true,
-	"esentutl.exe":      true,
-	"expand.exe":        true,
-	"extrac32.exe":      true,
-	"hh.exe":            true,
-	"ieexec.exe":        true,
-	"makecab.exe":       true,
-	"mavinject.exe":     true,
-	"microsoft.workflow.compiler.exe": true,
-	"mmc.exe":           true,
-	"msconfig.exe":      true,
-	"msdeploy.exe":      true,
-	"msdt.exe":          true,
-	"odbcconf.exe":      true,
-	"pcwrun.exe":        true,
-	"presentationhost.exe": true,
-	"schtasks.exe":      true,
-	"scriptrunner.exe":  true,
+// Low risk LOLBins (commonly used legitimately) - tier 1
+var lolbinLow = map[string]bool{
+	"cmd.exe": true, "powershell.exe": true, "pwsh.exe": true,
+	"wscript.exe": true, "cscript.exe": true, "msiexec.exe": true,
+	"schtasks.exe": true, "mmc.exe": true, "msconfig.exe": true,
+	"tar.exe": true, "expand.exe": true, "makecab.exe": true,
+}
+
+// Medium risk LOLBins - tier 2
+var lolbinMedium = map[string]bool{
+	"mshta.exe": true, "certutil.exe": true, "bitsadmin.exe": true,
+	"regsvr32.exe": true, "ftp.exe": true, "curl.exe": true,
+	"finger.exe": true, "wsl.exe": true, "bash.exe": true,
+	"forfiles.exe": true, "pcalua.exe": true, "esentutl.exe": true,
+	"extrac32.exe": true, "hh.exe": true, "control.exe": true,
+	"pktmon.exe": true, "replace.exe": true, "diantz.exe": true,
+	"ie4uinit.exe": true, "presentationhost.exe": true,
 	"syncappvpublishingserver.exe": true,
-	"te.exe":            true,
-	"tracker.exe":       true,
-	"xwizard.exe":       true,
+}
+
+// High risk LOLBins (commonly used in attacks) - tier 3
+var lolbinHigh = map[string]bool{
+	"rundll32.exe": true, "msbuild.exe": true, "installutil.exe": true,
+	"wmic.exe": true, "regasm.exe": true, "regsvcs.exe": true,
+	"cmstp.exe": true, "odbcconf.exe": true, "msxsl.exe": true,
+	"ieexec.exe": true, "mavinject.exe": true, "tracker.exe": true,
+	"te.exe": true, "xwizard.exe": true, "pcwrun.exe": true,
+	"scriptrunner.exe": true, "msdeploy.exe": true, "msdt.exe": true,
+	"microsoft.workflow.compiler.exe": true,
+}
+
+// lolbins is a combined map for backward compatibility with IsLOLBin.
+var lolbins = func() map[string]bool {
+	m := make(map[string]bool)
+	for k := range lolbinLow {
+		m[k] = true
+	}
+	for k := range lolbinMedium {
+		m[k] = true
+	}
+	for k := range lolbinHigh {
+		m[k] = true
+	}
+	return m
+}()
+
+// LOLBinRisk returns the risk tier for a LOLBin: 0=none, 1=low, 2=medium, 3=high.
+func LOLBinRisk(name string) int {
+	n := strings.ToLower(name)
+	if lolbinHigh[n] {
+		return 3
+	}
+	if lolbinMedium[n] {
+		return 2
+	}
+	if lolbinLow[n] {
+		return 1
+	}
+	return 0
+}
+
+// IsLOLBin checks if the given process name is a known LOLBin.
+func IsLOLBin(name string) bool {
+	return lolbins[strings.ToLower(name)]
+}
+
+// knownElectronApps lists well-known Electron/desktop apps to reduce false positives.
+var knownElectronApps = map[string]bool{
+	"code.exe": true, "teams.exe": true, "slack.exe": true,
+	"discord.exe": true, "obsidian.exe": true, "notion.exe": true,
+	"atom.exe": true, "gitkraken.exe": true, "postman.exe": true,
+	"figma.exe": true, "spotify.exe": true, "whatsapp.exe": true,
+	"telegram.exe": true, "wechat.exe": true, "dingtalk.exe": true,
+}
+
+// IsElectronApp checks if a process name is a known Electron/desktop application.
+func IsElectronApp(name string) bool {
+	return knownElectronApps[strings.ToLower(name)]
 }
 
 // System process names that may be masqueraded.

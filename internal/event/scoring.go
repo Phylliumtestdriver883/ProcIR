@@ -57,6 +57,34 @@ func scoreEvent(e *types.EventEvidence) {
 			e.Reasons = append(e.Reasons, i18n.T("evt_ps_suspicious"))
 		}
 
+		// AMSI bypass in script block: +30
+		if strings.Contains(cmdLower, "amsiinitfailed") || strings.Contains(cmdLower, "amsiutils") ||
+			strings.Contains(cmdLower, "system.management.automation.amsiutils") {
+			e.Score += 30
+			e.Reasons = append(e.Reasons, i18n.T("evt_amsi_bypass"))
+		}
+
+		// Defender exclusion modification: +25
+		if strings.Contains(cmdLower, "set-mppreference") || strings.Contains(cmdLower, "add-mppreference") ||
+			strings.Contains(cmdLower, "remove-mppreference") {
+			if strings.Contains(cmdLower, "exclusion") || strings.Contains(cmdLower, "disablerealtimemonitoring") {
+				e.Score += 25
+				e.Reasons = append(e.Reasons, i18n.T("evt_defender_tamper"))
+			}
+		}
+
+		// Credential access in PS: +30
+		if strings.Contains(cmdLower, "invoke-mimikatz") || strings.Contains(cmdLower, "sekurlsa") ||
+			strings.Contains(cmdLower, "invoke-kerberoast") {
+			// Already covered by evt_ps_highrisk
+		}
+		// .NET reflection in PS: +25
+		if strings.Contains(cmdLower, "assembly.load") || strings.Contains(cmdLower, "add-type") ||
+			strings.Contains(cmdLower, "reflection.assembly") || strings.Contains(cmdLower, "appdomain") {
+			e.Score += 25
+			e.Reasons = append(e.Reasons, i18n.T("evt_dotnet_reflect"))
+		}
+
 	case 4698, 4702: // Task creation/modification
 		e.Score += 15
 		e.Reasons = append(e.Reasons, i18n.T("evt_task_operation"))
@@ -142,6 +170,46 @@ func scoreEvent(e *types.EventEvidence) {
 		if e.Domain != "" && isUserOrTemp(procLower) {
 			e.Score += 10
 			e.Reasons = append(e.Reasons, i18n.T("evt_sysmon_dns"))
+		}
+
+	case 8: // Sysmon CreateRemoteThread
+		e.Score += 25
+		e.Reasons = append(e.Reasons, i18n.T("evt_sysmon_remotethrd"))
+		targetLower = strings.ToLower(e.TargetPath)
+		if strings.Contains(targetLower, "lsass") {
+			e.Score += 20
+			e.Reasons = append(e.Reasons, i18n.T("evt_sysmon_remotethrd_lsass"))
+		}
+
+	case 10: // Sysmon ProcessAccess
+		targetLower = strings.ToLower(e.TargetPath)
+		if strings.Contains(targetLower, "lsass") {
+			e.Score += 30
+			e.Reasons = append(e.Reasons, i18n.T("evt_sysmon_lsass_access"))
+		} else {
+			e.Score += 5
+		}
+
+	case 17, 18: // Sysmon Pipe Created/Connected
+		pipeLower := strings.ToLower(e.TargetPath)
+		suspPipes := []string{"postex", "meterpreter", "cobalt", "msagent", "beacon", "psexec"}
+		for _, sp := range suspPipes {
+			if strings.Contains(pipeLower, sp) {
+				e.Score += 25
+				e.Reasons = append(e.Reasons, i18n.T("evt_sysmon_susp_pipe"))
+				break
+			}
+		}
+
+	case 4703: // Token Right Adjusted
+		privLower := strings.ToLower(e.Description)
+		highPrivs := []string{"sedebugprivilege", "seimpersonateprivilege", "seassignprimarytokenprivilege", "setcbprivilege", "seloaddriverprivilege"}
+		for _, p := range highPrivs {
+			if strings.Contains(privLower, p) {
+				e.Score += 20
+				e.Reasons = append(e.Reasons, i18n.T("evt_token_priv"))
+				break
+			}
 		}
 	}
 }

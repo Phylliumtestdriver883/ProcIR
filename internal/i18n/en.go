@@ -151,6 +151,10 @@ var en = map[string]string{
 	"evtc_sysmon_net_conn":     "Sysmon network connection: %s → %s:%s",
 	"evtc_sysmon_proc_create":  "Sysmon process creation: %s → %s",
 	"evtc_sysmon_reg_mod":      "Sysmon registry modification: %s → %s",
+	"evtc_sysmon_remote_thread":"Sysmon remote thread: %s → %s",
+	"evtc_sysmon_proc_access":  "Sysmon process access: %s → %s",
+	"evtc_sysmon_pipe_create":  "Sysmon pipe created: %s → %s",
+	"evtc_sysmon_pipe_connect": "Sysmon pipe connected: %s → %s",
 	"evttype_4688":  "Process Creation",
 	"evttype_4698":  "Task Created",
 	"evttype_4702":  "Task Modified",
@@ -371,4 +375,50 @@ var en = map[string]string{
 	"cli_yara_loaded":          "YARA loaded: %d rules (%s)",
 	"cli_warning":              "Warning: %s",
 	"cli_yara_fail":            "YARA rules loading failed: %s",
+
+	// === New P0/P1 rules ===
+
+	// LOLBin tiering (rules/engine.go)
+	"lolbin_low":              "LOLBin process (low risk)",
+	"lolbin_medium":           "LOLBin process (medium risk)",
+	"lolbin_high":             "LOLBin process (high risk)",
+
+	// AMSI / Defender bypass
+	"amsi_bypass":             "AMSI bypass detected",
+	"defender_tamper":         "Defender protection tampering",
+	"strong_amsi_download":    "[Strong] AMSI bypass+download execution",
+
+	// LSASS / credential access
+	"lsass_dump":              "LSASS/credential dumping",
+	"strong_lsass_dump":       "[Strong] LSASS dump",
+
+	// .NET reflection
+	"dotnet_reflect":          ".NET reflection loading",
+	"dotnet_compile":          ".NET suspicious compilation",
+
+	// Lateral movement
+	"wmic_remote_exec":        "WMIC remote execution",
+	"remote_persist":          "Remote persistence creation",
+
+	// Event type descriptions
+	"evttype_remotethrd_sysmon":  "Remote Thread (Sysmon)",
+	"evttype_procaccess_sysmon":  "Process Access (Sysmon)",
+	"evttype_pipe_create_sysmon": "Pipe Created (Sysmon)",
+	"evttype_pipe_connect_sysmon":"Pipe Connected (Sysmon)",
+	"evttype_token_adjust":       "Token Adjustment",
+
+	// Behavior chains
+	"beh_cred_chain":          "Credential access chain (Privilege+LSASS/Dump)",
+	"beh_amsi_chain":          "AMSI/Defender bypass chain (Bypass+Download)",
+	"beh_amsi_bypass":         "AMSI bypass",
+	"beh_defender_tamper":     "Defender tampering",
+	"beh_lateral_chain":       "Lateral movement chain (Remote exec+Cred+Service/Task)",
+	"beh_wmic_remote":         "WMIC remote process creation",
+	"beh_remote_task":         "Remote scheduled task creation",
+	"beh_remote_svc":          "Remote service creation",
+	"beh_remote_exec":         "Remote execution tool",
+
+	// Fusion new rules
+	"fus_userdir_event_trig":  "[Fusion] User directory+event+trigger",
+	"fus_dll_yara_net":        "[Fusion] DLL hijack+YARA+outbound",
 }

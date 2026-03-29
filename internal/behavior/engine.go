@@ -42,6 +42,15 @@ func Detect(
 	// Chain 6: Download-and-execute
 	chains = append(chains, detectDownloadExec(processes)...)
 
+	// Chain 7: Credential access
+	detectCredentialChain(processes, &chains)
+
+	// Chain 8: AMSI/Defender bypass
+	detectAMSIBypassChain(processes, &chains)
+
+	// Chain 9: Lateral movement
+	detectLateralMovementChain(processes, triggers, &chains)
+
 	return chains
 }
 
@@ -308,6 +317,146 @@ func detectDownloadExec(procs []*types.ProcessRecord) []*types.BehaviorChain {
 	}
 
 	return chains
+}
+
+// Chain 7: Credential access (privilege + LSASS access indicators)
+func detectCredentialChain(records []*types.ProcessRecord, chains *[]*types.BehaviorChain) {
+	for _, r := range records {
+		cmdLower := strings.ToLower(r.CommandLine)
+		nameLower := strings.ToLower(r.Name)
+
+		// Detect credential dump tools
+		isDumpTool := strings.Contains(cmdLower, "sekurlsa") ||
+			strings.Contains(cmdLower, "minidump") ||
+			(strings.Contains(cmdLower, "comsvcs") && strings.Contains(cmdLower, "minidump")) ||
+			strings.Contains(cmdLower, "procdump") && strings.Contains(cmdLower, "lsass") ||
+			strings.Contains(cmdLower, "nanodump") || strings.Contains(cmdLower, "dumpert") ||
+			strings.Contains(cmdLower, "pypykatz") || strings.Contains(cmdLower, "handlekatz") ||
+			nameLower == "mimikatz.exe"
+
+		if !isDumpTool {
+			continue
+		}
+
+		evidence := []string{
+			fmt.Sprintf(i18n.T("beh_process_fmt"), r.Name, r.PID),
+			fmt.Sprintf(i18n.T("beh_cmdline_fmt"), truncate(r.CommandLine, 120)),
+		}
+
+		score := 35
+		if r.HasPublicIP || r.HasNetwork {
+			evidence = append(evidence, i18n.T("beh_public_conn"))
+			score = 40
+		}
+
+		*chains = append(*chains, &types.BehaviorChain{
+			PatternName:  i18n.T("beh_cred_chain"),
+			PatternScore: score,
+			Evidence:     evidence,
+			ObjectPaths:  []string{r.Path},
+		})
+	}
+}
+
+// Chain 8: AMSI/Defender bypass
+func detectAMSIBypassChain(records []*types.ProcessRecord, chains *[]*types.BehaviorChain) {
+	for _, r := range records {
+		cmdLower := strings.ToLower(r.CommandLine)
+		nameLower := strings.ToLower(r.Name)
+		isPowerShell := nameLower == "powershell.exe" || nameLower == "pwsh.exe"
+		if !isPowerShell {
+			continue
+		}
+
+		hasAMSI := strings.Contains(cmdLower, "amsiinitfailed") || strings.Contains(cmdLower, "amsiutils")
+		hasDefender := (strings.Contains(cmdLower, "set-mppreference") || strings.Contains(cmdLower, "add-mppreference")) &&
+			(strings.Contains(cmdLower, "exclusion") || strings.Contains(cmdLower, "disablerealtimemonitoring"))
+
+		if !hasAMSI && !hasDefender {
+			continue
+		}
+
+		hasDownload := strings.Contains(cmdLower, "downloadstring") || strings.Contains(cmdLower, "invoke-webrequest") ||
+			strings.Contains(cmdLower, "net.webclient")
+		hasIEX := strings.Contains(cmdLower, "invoke-expression") || strings.Contains(cmdLower, "iex ")
+
+		evidence := []string{
+			fmt.Sprintf(i18n.T("beh_process_fmt"), r.Name, r.PID),
+		}
+		if hasAMSI {
+			evidence = append(evidence, i18n.T("beh_amsi_bypass"))
+		}
+		if hasDefender {
+			evidence = append(evidence, i18n.T("beh_defender_tamper"))
+		}
+		if hasDownload || hasIEX {
+			evidence = append(evidence, fmt.Sprintf(i18n.T("beh_cmdline_fmt"), truncate(r.CommandLine, 120)))
+		}
+
+		score := 25
+		if (hasAMSI || hasDefender) && (hasDownload || hasIEX) {
+			score = 35
+		}
+
+		*chains = append(*chains, &types.BehaviorChain{
+			PatternName:  i18n.T("beh_amsi_chain"),
+			PatternScore: score,
+			Evidence:     evidence,
+			ObjectPaths:  []string{r.Path},
+		})
+	}
+}
+
+// Chain 9: Lateral movement
+func detectLateralMovementChain(records []*types.ProcessRecord, triggers []*types.TriggerEntry, chains *[]*types.BehaviorChain) {
+	for _, r := range records {
+		cmdLower := strings.ToLower(r.CommandLine)
+		nameLower := strings.ToLower(r.Name)
+
+		isLateral := false
+		var evidence []string
+
+		// wmic remote exec
+		if nameLower == "wmic.exe" && strings.Contains(cmdLower, "process call create") {
+			isLateral = true
+			evidence = append(evidence, fmt.Sprintf(i18n.T("beh_process_fmt"), r.Name, r.PID))
+			evidence = append(evidence, i18n.T("beh_wmic_remote"))
+		}
+
+		// schtasks remote
+		if nameLower == "schtasks.exe" && strings.Contains(cmdLower, "/create") && strings.Contains(cmdLower, "/s ") {
+			isLateral = true
+			evidence = append(evidence, fmt.Sprintf(i18n.T("beh_process_fmt"), r.Name, r.PID))
+			evidence = append(evidence, i18n.T("beh_remote_task"))
+		}
+
+		// sc remote
+		if nameLower == "sc.exe" && strings.Contains(cmdLower, `\\`) && strings.Contains(cmdLower, "create") {
+			isLateral = true
+			evidence = append(evidence, fmt.Sprintf(i18n.T("beh_process_fmt"), r.Name, r.PID))
+			evidence = append(evidence, i18n.T("beh_remote_svc"))
+		}
+
+		// psexec / winrs
+		if nameLower == "psexec.exe" || nameLower == "psexec64.exe" ||
+			(nameLower == "winrs.exe") ||
+			(strings.Contains(cmdLower, "enter-pssession") || strings.Contains(cmdLower, "invoke-command") && strings.Contains(cmdLower, "-computername")) {
+			isLateral = true
+			evidence = append(evidence, fmt.Sprintf(i18n.T("beh_process_fmt"), r.Name, r.PID))
+			evidence = append(evidence, i18n.T("beh_remote_exec"))
+		}
+
+		if !isLateral {
+			continue
+		}
+
+		*chains = append(*chains, &types.BehaviorChain{
+			PatternName:  i18n.T("beh_lateral_chain"),
+			PatternScore: 30,
+			Evidence:     evidence,
+			ObjectPaths:  []string{r.Path},
+		})
+	}
 }
 
 func baseName(path string) string {

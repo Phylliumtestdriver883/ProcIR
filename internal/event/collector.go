@@ -392,8 +392,8 @@ func collectWMIActivity(cfg *types.EventCollectConfig) ([]*types.EventEvidence, 
 // --- Sysmon ---
 
 func collectSysmon(cfg *types.EventCollectConfig) ([]*types.EventEvidence, error) {
-	// Event IDs: 1(process), 3(network), 7(imageload), 11(filecreate), 13(regmod), 22(dns)
-	query := fmt.Sprintf("*[System[(EventID=1 or EventID=3 or EventID=7 or EventID=11 or EventID=13 or EventID=22) and TimeCreated[%s]]]", timeFilter(cfg.MaxAgeDays))
+	// Event IDs: 1(process), 3(network), 7(imageload), 8(remotethread), 10(processaccess), 11(filecreate), 13(regmod), 17(pipecreate), 18(pipeconnect), 22(dns)
+	query := fmt.Sprintf("*[System[(EventID=1 or EventID=3 or EventID=7 or EventID=8 or EventID=10 or EventID=11 or EventID=13 or EventID=17 or EventID=18 or EventID=22) and TimeCreated[%s]]]", timeFilter(cfg.MaxAgeDays))
 	evts, err := queryEvents("Microsoft-Windows-Sysmon/Operational", query, cfg.MaxEvents, false)
 	if err != nil {
 		return nil, err
@@ -437,6 +437,22 @@ func collectSysmon(cfg *types.EventCollectConfig) ([]*types.EventEvidence, error
 			ev.ProcessPath = e.EventData.get("Image")
 			ev.Domain = e.EventData.get("QueryName")
 			ev.Description = fmt.Sprintf(i18n.T("evtc_sysmon_dns_query"), baseName(ev.ProcessPath), ev.Domain)
+		case 8: // CreateRemoteThread
+			ev.ProcessPath = e.EventData.get("SourceImage")
+			ev.TargetPath = e.EventData.get("TargetImage")
+			ev.Description = fmt.Sprintf(i18n.T("evtc_sysmon_remote_thread"), baseName(ev.ProcessPath), baseName(ev.TargetPath))
+		case 10: // ProcessAccess
+			ev.ProcessPath = e.EventData.get("SourceImage")
+			ev.TargetPath = e.EventData.get("TargetImage")
+			ev.Description = fmt.Sprintf(i18n.T("evtc_sysmon_proc_access"), baseName(ev.ProcessPath), baseName(ev.TargetPath))
+		case 17: // Pipe Created
+			ev.ProcessPath = e.EventData.get("Image")
+			ev.TargetPath = e.EventData.get("PipeName")
+			ev.Description = fmt.Sprintf(i18n.T("evtc_sysmon_pipe_create"), baseName(ev.ProcessPath), ev.TargetPath)
+		case 18: // Pipe Connected
+			ev.ProcessPath = e.EventData.get("Image")
+			ev.TargetPath = e.EventData.get("PipeName")
+			ev.Description = fmt.Sprintf(i18n.T("evtc_sysmon_pipe_connect"), baseName(ev.ProcessPath), ev.TargetPath)
 		default:
 			continue
 		}
@@ -501,7 +517,11 @@ func describeEventID(id int) string {
 		7045: i18n.T("evttype_svc_install_sys"), 7036: i18n.T("evttype_svc_state_change"),
 		4104: i18n.T("evttype_ps_scriptblock"), 4103: i18n.T("evttype_ps_module_log"),
 		1: i18n.T("evttype_proc_create_sysmon"), 3: i18n.T("evttype_net_conn_sysmon"), 7: i18n.T("evttype_image_load_sysmon"),
-		11: i18n.T("evttype_file_create_sysmon"), 13: i18n.T("evttype_reg_mod_sysmon"), 22: i18n.T("evttype_dns_query_sysmon"),
+		8: i18n.T("evttype_remotethrd_sysmon"), 10: i18n.T("evttype_procaccess_sysmon"),
+		11: i18n.T("evttype_file_create_sysmon"), 13: i18n.T("evttype_reg_mod_sysmon"),
+		17: i18n.T("evttype_pipe_create_sysmon"), 18: i18n.T("evttype_pipe_connect_sysmon"),
+		22: i18n.T("evttype_dns_query_sysmon"),
+		4703: i18n.T("evttype_token_adjust"),
 	}
 	if desc, ok := m[id]; ok {
 		return desc

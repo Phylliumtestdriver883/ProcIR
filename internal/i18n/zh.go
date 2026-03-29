@@ -151,6 +151,10 @@ var zh = map[string]string{
 	"evtc_sysmon_net_conn":     "Sysmon网络连接: %s → %s:%s",
 	"evtc_sysmon_proc_create":  "Sysmon进程创建: %s → %s",
 	"evtc_sysmon_reg_mod":      "Sysmon注册表修改: %s → %s",
+	"evtc_sysmon_remote_thread":"Sysmon远程线程: %s → %s",
+	"evtc_sysmon_proc_access":  "Sysmon进程访问: %s → %s",
+	"evtc_sysmon_pipe_create":  "Sysmon管道创建: %s → %s",
+	"evtc_sysmon_pipe_connect": "Sysmon管道连接: %s → %s",
 	// Event type lookup
 	"evttype_4688":  "进程创建",
 	"evttype_4698":  "任务创建",
@@ -372,4 +376,60 @@ var zh = map[string]string{
 	"cli_yara_loaded":          "YARA 已加载: %d 条规则 (%s)",
 	"cli_warning":              "警告: %s",
 	"cli_yara_fail":            "YARA 规则加载失败: %s",
+
+	// === New P0/P1 rules ===
+
+	// LOLBin tiering (rules/engine.go)
+	"lolbin_low":              "LOLBin进程(低风险)",
+	"lolbin_medium":           "LOLBin进程(中风险)",
+	"lolbin_high":             "LOLBin进程(高风险)",
+
+	// AMSI / Defender bypass
+	"amsi_bypass":             "检测到AMSI绕过",
+	"defender_tamper":         "Defender防护篡改",
+	"strong_amsi_download":    "[强规则] AMSI绕过+下载执行",
+
+	// LSASS / credential access
+	"lsass_dump":              "LSASS/凭证转储行为",
+	"strong_lsass_dump":       "[强规则] LSASS转储",
+
+	// .NET reflection
+	"dotnet_reflect":          ".NET反射加载",
+	"dotnet_compile":          ".NET可疑编译",
+
+	// Lateral movement
+	"wmic_remote_exec":        "WMIC远程执行",
+	"remote_persist":          "远程创建持久化",
+
+	// Event scoring new rules
+	"evt_amsi_bypass":         "AMSI绕过(脚本块)",
+	"evt_defender_tamper":     "Defender防护篡改(脚本块)",
+	"evt_dotnet_reflect":      ".NET反射加载(脚本块)",
+	"evt_sysmon_remotethrd":   "远程线程创建(Sysmon)",
+	"evt_sysmon_remotethrd_lsass": "远程线程注入LSASS",
+	"evt_sysmon_lsass_access": "LSASS进程访问(Sysmon)",
+	"evt_sysmon_susp_pipe":    "可疑命名管道(Sysmon)",
+	"evt_token_priv":          "高危令牌权限调整",
+
+	// Event type descriptions
+	"evttype_remotethrd_sysmon":  "远程线程(Sysmon)",
+	"evttype_procaccess_sysmon":  "进程访问(Sysmon)",
+	"evttype_pipe_create_sysmon": "管道创建(Sysmon)",
+	"evttype_pipe_connect_sysmon":"管道连接(Sysmon)",
+	"evttype_token_adjust":       "令牌权限调整",
+
+	// Behavior chains
+	"beh_cred_chain":          "凭证获取链 (特权+LSASS/Dump工具)",
+	"beh_amsi_chain":          "AMSI/Defender绕过链 (绕过+下载执行)",
+	"beh_amsi_bypass":         "AMSI绕过",
+	"beh_defender_tamper":     "Defender篡改",
+	"beh_lateral_chain":       "横向移动链 (远程执行+凭证+服务/任务)",
+	"beh_wmic_remote":         "WMIC远程进程创建",
+	"beh_remote_task":         "远程计划任务创建",
+	"beh_remote_svc":          "远程服务创建",
+	"beh_remote_exec":         "远程执行工具",
+
+	// Fusion new rules
+	"fus_userdir_event_trig":  "[融合] 用户目录+事件+触发器",
+	"fus_dll_yara_net":        "[融合强规则] DLL劫持+YARA+外联",
 }

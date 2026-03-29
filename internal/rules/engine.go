@@ -116,7 +116,7 @@ func Apply(r *types.ProcessRecord) {
 	}
 
 	// 浏览器 → 系统工具: +20
-	if context.IsBrowser(r.ParentName) && context.IsSystemTool(r.Name) {
+	if context.IsBrowser(r.ParentName) && !context.IsElectronApp(r.ParentName) && context.IsSystemTool(r.Name) {
 		r.RiskScore += 20
 		r.Reasons = append(r.Reasons, i18n.T("browser_spawn_tool"))
 		hasParentChainHit = true
@@ -183,6 +183,53 @@ func Apply(r *types.ProcessRecord) {
 	psHasDownload := isPowerShell &&
 		(strings.Contains(cmdLower, "downloadstring") || strings.Contains(cmdLower, "downloadfile") ||
 			strings.Contains(cmdLower, "invoke-webrequest") || strings.Contains(cmdLower, "net.webclient"))
+
+	// AMSI bypass detection: +30
+	if isPowerShell && (strings.Contains(cmdLower, "amsiinitfailed") ||
+		strings.Contains(cmdLower, "amsiutils") ||
+		strings.Contains(cmdLower, "system.management.automation.amsiutils")) {
+		r.RiskScore += 30
+		r.Reasons = append(r.Reasons, i18n.T("amsi_bypass"))
+		hasCmdLineHit = true
+	}
+
+	// Defender exclusion tampering: +25
+	if strings.Contains(cmdLower, "set-mppreference") || strings.Contains(cmdLower, "add-mppreference") {
+		if strings.Contains(cmdLower, "-exclusionpath") || strings.Contains(cmdLower, "-exclusionprocess") ||
+			strings.Contains(cmdLower, "-disablerealtimemonitoring") {
+			r.RiskScore += 25
+			r.Reasons = append(r.Reasons, i18n.T("defender_tamper"))
+			hasCmdLineHit = true
+		}
+	}
+
+	// LSASS / credential dumping: +35
+	if strings.Contains(cmdLower, "sekurlsa") || strings.Contains(cmdLower, "minidump") ||
+		strings.Contains(cmdLower, "minidumpwritedump") ||
+		(strings.Contains(cmdLower, "comsvcs") && strings.Contains(cmdLower, "minidump")) ||
+		strings.Contains(cmdLower, "procdump") && strings.Contains(cmdLower, "lsass") ||
+		strings.Contains(cmdLower, "nanodump") || strings.Contains(cmdLower, "dumpert") ||
+		strings.Contains(cmdLower, "handlekatz") || strings.Contains(cmdLower, "pypykatz") {
+		r.RiskScore += 35
+		r.Reasons = append(r.Reasons, i18n.T("lsass_dump"))
+		hasCmdLineHit = true
+	}
+
+	// .NET reflection/compile: +25
+	if strings.Contains(cmdLower, "assembly.load") || strings.Contains(cmdLower, "assembly.loadfile") ||
+		strings.Contains(cmdLower, "add-type") || strings.Contains(cmdLower, "appdomain") ||
+		strings.Contains(cmdLower, "codedom.compiler") {
+		r.RiskScore += 25
+		r.Reasons = append(r.Reasons, i18n.T("dotnet_reflect"))
+		hasCmdLineHit = true
+	}
+
+	// csc/vbc compile from suspicious location: +20
+	if (nameLower == "csc.exe" || nameLower == "vbc.exe") && (hasPathHit || strings.Contains(cmdLower, `\temp\`) || strings.Contains(cmdLower, `\users\`)) {
+		r.RiskScore += 20
+		r.Reasons = append(r.Reasons, i18n.T("dotnet_compile"))
+		hasCmdLineHit = true
+	}
 
 	// rundll32 加载用户目录DLL: +30
 	rundll32UserDLL := false
@@ -252,9 +299,33 @@ func Apply(r *types.ProcessRecord) {
 		hasCmdLineHit = true
 	}
 
-	// LOLBin 通用命中: +12
+	// WMI remote execution: +25
+	if nameLower == "wmic.exe" && strings.Contains(cmdLower, "process call create") {
+		r.RiskScore += 25
+		r.Reasons = append(r.Reasons, i18n.T("wmic_remote_exec"))
+		hasCmdLineHit = true
+	}
+
+	// Remote service/task creation: +25
+	if (nameLower == "schtasks.exe" && strings.Contains(cmdLower, "/create") && strings.Contains(cmdLower, "/s ")) ||
+		(nameLower == "sc.exe" && strings.Contains(cmdLower, `\\`) && strings.Contains(cmdLower, "create")) {
+		r.RiskScore += 25
+		r.Reasons = append(r.Reasons, i18n.T("remote_persist"))
+		hasCmdLineHit = true
+	}
+
+	// LOLBin 通用命中: tiered scoring
 	if r.IsLOLBin {
-		r.RiskScore += 12
+		switch context.LOLBinRisk(r.Name) {
+		case 1:
+			r.RiskScore += 8
+		case 2:
+			r.RiskScore += 12
+		case 3:
+			r.RiskScore += 18
+		default:
+			r.RiskScore += 12
+		}
 		r.Reasons = append(r.Reasons, i18n.T("lolbin_process"))
 	}
 
@@ -364,6 +435,23 @@ func Apply(r *types.ProcessRecord) {
 		}
 	}
 
+	// AMSI bypass + download/IEX: Critical
+	if (strings.Contains(cmdLower, "amsiinitfailed") || strings.Contains(cmdLower, "amsiutils")) &&
+		(psHasDownload || psHasIEX) {
+		if overrideMin < 80 {
+			overrideMin = 80
+			r.Reasons = append(r.Reasons, i18n.T("strong_amsi_download"))
+		}
+	}
+
+	// LSASS dump: Critical
+	if strings.Contains(cmdLower, "lsass") && (strings.Contains(cmdLower, "minidump") || strings.Contains(cmdLower, "procdump") || strings.Contains(cmdLower, "comsvcs")) {
+		if overrideMin < 80 {
+			overrideMin = 80
+			r.Reasons = append(r.Reasons, i18n.T("strong_lsass_dump"))
+		}
+	}
+
 	// 应用 Override 保底分
 	if r.RiskScore < overrideMin {
 		r.RiskScore = overrideMin
@@ -427,16 +515,31 @@ func Apply(r *types.ProcessRecord) {
 		r.Reasons = filterReason(r.Reasons, i18n.T("browser_spawn_tool"))
 	}
 
+	// Electron app spawning shell: -10
+	if context.IsBrowser(r.ParentName) || context.IsElectronApp(r.ParentName) {
+		if r.Signed && r.SignValid && (pathCat == context.PathProgramFiles || pathCat == context.PathSystem32) {
+			r.RiskScore -= 10
+		}
+	}
+
 	// ========================================
 	// Step 5: 上下文权重
 	// ========================================
 
-	// 命令行命中: score × 1.5
+	// 命令行命中: score × 1.5 (capped bonus)
 	if hasCmdLineHit && r.RiskScore > 0 {
-		r.RiskScore = int(math.Round(float64(r.RiskScore) * 1.5))
+		bonus := int(math.Round(float64(r.RiskScore) * 0.5))
+		if bonus > 25 {
+			bonus = 25
+		}
+		r.RiskScore += bonus
 	} else if hasParentChainHit && r.RiskScore > 0 {
-		// 父子链命中: score × 1.2
-		r.RiskScore = int(math.Round(float64(r.RiskScore) * 1.2))
+		// 父子链命中: score × 1.2 (capped bonus)
+		bonus := int(math.Round(float64(r.RiskScore) * 0.2))
+		if bonus > 15 {
+			bonus = 15
+		}
+		r.RiskScore += bonus
 	}
 
 	// ========================================
