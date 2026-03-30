@@ -313,6 +313,7 @@ var zh = map[string]string{
 	"mem_rwx_private_combo":    "RWX+私有可执行组合",
 
 	// === indicator/extractor.go ===
+	"ioc_network_conn":         "网络连接",
 	"ioc_proc_cmdline":         "进程命令行",
 	"ioc_trigger":              "触发器",
 	"ioc_forensic":             "取证记录",

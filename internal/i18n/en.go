@@ -312,6 +312,7 @@ var en = map[string]string{
 	"mem_rwx_private_combo":    "RWX+private executable combination",
 
 	// === indicator/extractor.go ===
+	"ioc_network_conn":         "Network connection",
 	"ioc_proc_cmdline":         "Process command line",
 	"ioc_trigger":              "Trigger",
 	"ioc_forensic":             "Forensic record",

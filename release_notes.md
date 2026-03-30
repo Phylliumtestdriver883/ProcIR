@@ -1,56 +1,39 @@
-## ProcIR v1.5.0 - Windows 应急响应进程排查工具
+## ProcIR v1.5.1 - Windows 应急响应进程排查工具
 
 面向安全工程师的一键式应急响应工具，快速定位木马、后门、持久化、白加黑、内存注入等威胁。
 
-### v1.5.0 — 新增 CLI 模式 & 数据导出
+### v1.5.1 — Bug 修复 & 代码优化
 
-本次更新新增纯命令行运行模式，支持无 GUI 环境下的自动化扫描与数据导出，同时支持 YARA 扫描结果独立导出。
+本次更新修复了多个进程分析误报问题，优化了 IOC 提取、YARA 加载流程和代码质量。
 
-#### CLI 模式（纯命令行）
+#### 进程分析误报修复
 
-- **无需 GUI**：`-cli` 参数启动纯命令行模式，扫描完成后直接导出数据文件
-- **适用场景**：自动化脚本、远程 SSH、无桌面环境、批量扫描、SIEM 集成
-- **实时进度**：扫描过程中显示进程分析进度和耗时
-- **扫描摘要**：完成后输出风险分布统计、YARA 匹配数、行为链/IOC/时间线汇总
+- **修复 OriginalFilename `.mui` 后缀误报**：Windows 系统文件（如 svchost.exe）的 `GetFileVersionInfo` 返回 `svchost.exe.mui`，导致"原始文件名不匹配"误判 +10 分。现在在签名提取阶段自动剥离 `.mui` 后缀
+- **修复 masquerade 检测硬编码 `C:\` 问题**：改用 `HasSuffix` 匹配 `\windows\system32\...`，不再依赖盘符，支持非 C: 盘 Windows 安装
+- **补充 SysWOW64 路径**：dllhost.exe 等进程在 SysWOW64 下不再被误判为伪装
+- **扩展 expectedParents**：smss.exe 补充 `[system process]`；dllhost.exe 补充 `services.exe`；减少父进程链误报
+- **OriginalName 比较加 `filepath.Base` 提取**：防止带路径前缀时误判
 
-#### 数据导出
+#### IOC 提取修复
 
-- **JSON 全量导出**：ExecutionObjects、Processes、Triggers、Forensics、Events、Modules、Timeline、BehaviorChains、Indicators，附带 Summary 统计
-- **CSV 全量导出**：ExecutionObjects 27 列关键字段，含 YARA 匹配状态和评分
-- **YARA 专项导出**：`-yara-export` 参数仅导出 YARA 命中对象，含规则名、标签、匹配分数
-- **自动文件名**：不指定 `-o` 时自动生成带时间戳的文件名
+- **修复网络 IP 未纳入 IOC**：进程网络连接采集到的公网 IP 现在直接进入 IOC 列表（之前只从命令行正则提取，遗漏了实际网络连接）
+- **移除域名提取**：域名正则误报率极高（文件名、路径、版本号被匹配），已移除。域名信息已包含在 URL 提取中
+- **修复 IP 校验缺失 octet 范围检查**：版本号如 `4.18.26020.6` 不再被误判为 IP 地址
+- **补充过滤**：广播地址 (255.x.x.x)、组播地址 (224-239.x.x.x) 现在被正确过滤
 
-#### CLI 参数
+#### YARA 界面增强
 
-| 参数 | 说明 |
-|------|------|
-| `-cli` | 启用 CLI 模式（不启动 GUI） |
-| `-o <path>` | 指定导出文件路径 |
-| `-format json\|csv` | 导出格式，默认 json |
-| `-yara <path>` | YARA 规则文件或目录 |
-| `-yara-export` | 仅导出 YARA 匹配结果 |
+- **新增"加载规则文件夹"按钮**：支持浏览器选择文件夹，自动过滤 .yar/.yara/.rule 文件
+- **递归加载规则目录**：`filepath.WalkDir` 替代 `os.ReadDir`，子目录中的规则文件也会被加载
+- **修复多文件上传 N+1 性能问题**：上传 N 个文件不再触发 N 次全目录重解析，改为 upload(save-only) + 单次 reload
+- **GUI 模式不再从命令行加载 YARA**：统一在界面操作，CLI 模式不受影响
 
-#### 使用示例
+#### 代码质量优化
 
-```bash
-# 全量扫描导出 JSON
-procir.exe -cli -o result.json
-
-# 全量扫描导出 CSV
-procir.exe -cli -o result.csv -format csv
-
-# 加载 YARA 规则，仅导出匹配结果
-procir.exe -cli -yara ./rules -yara-export -o yara_hits.json
-
-# 自动生成文件名
-procir.exe -cli
-```
-
-#### 其他改进
-
-- 新增 `internal/export` 包，统一处理 CLI 和未来的 API 数据导出
-- 新增 13 条中英文 CLI 提示消息（i18n 双语）
-- 项目代码量增至 55+ Go 源文件，12,000+ 行
+- **YARA 面板全面 i18n 化**：所有按钮、提示、错误消息改用 `t()` 函数，英文模式完整翻译
+- **替换手写 `itoa` / `baseName`**：改用标准库 `strconv.Itoa` / `filepath.Base`
+- **删除未使用代码**：移除 `rePath` 正则、`isInterestingDomain` 等死代码 (~80 行)
+- **修复 `io.Copy` / `dst.Close()` 错误丢弃**：YARA 文件上传时磁盘写入错误不再被静默忽略
 
 ---
 
@@ -58,6 +41,6 @@ procir.exe -cli
 
 ```
 procir.exe                    # GUI 模式（默认）
-procir.exe -yara rules.yar   # GUI 模式 + YARA 规则
+procir.exe -yara rules.yar   # GUI 模式（YARA 在界面加载）
 procir.exe -cli -o scan.json # CLI 模式，导出 JSON
 ```

@@ -23,6 +23,18 @@ func main() {
 	yaraOnly := flag.Bool("yara-export", false, "Export only YARA matched results (CLI mode)")
 	flag.Parse()
 
+	if *cliMode {
+		// CLI mode: load YARA from -yara flag or auto-detect
+		loadYaraEngine(yaraPath)
+		runCLI(*outputPath, *formatStr, *yaraOnly)
+		return
+	}
+
+	// GUI mode: YARA rules are loaded from the web UI, not command line
+	gui.Run()
+}
+
+func loadYaraEngine(yaraPath *string) {
 	// Auto-detect yara rules in same directory as executable
 	if *yaraPath == "" {
 		exePath, _ := os.Executable()
@@ -56,13 +68,6 @@ func main() {
 			fmt.Printf(i18n.T("cli_yara_fail")+"\n", *yaraPath)
 		}
 	}
-
-	if *cliMode {
-		runCLI(*outputPath, *formatStr, *yaraOnly)
-		return
-	}
-
-	gui.Run()
 }
 
 func runCLI(outputPath, formatStr string, yaraOnly bool) {

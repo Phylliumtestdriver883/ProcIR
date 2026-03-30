@@ -2,6 +2,7 @@ package signature
 
 import (
 	"fmt"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -282,7 +283,12 @@ func getVersionInfo(path string, info *SignatureInfo) {
 
 	info.Company = queryStringValue(data, "CompanyName")
 	info.Product = queryStringValue(data, "ProductName")
-	info.OriginalName = queryStringValue(data, "OriginalFilename")
+	origName := queryStringValue(data, "OriginalFilename")
+	// Windows MUI resource files report OriginalFilename with .mui suffix — strip it
+	if len(origName) > 4 && strings.EqualFold(origName[len(origName)-4:], ".mui") {
+		origName = origName[:len(origName)-4]
+	}
+	info.OriginalName = origName
 	info.FileVersion = queryStringValue(data, "FileVersion")
 }
 

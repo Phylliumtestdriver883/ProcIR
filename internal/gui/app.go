@@ -58,6 +58,7 @@ func Run() {
 	mux.HandleFunc("/api/ioc/status", handleIOCStatus)
 	mux.HandleFunc("/api/ioc/hits", handleIOCHits)
 	mux.HandleFunc("/api/yara/upload", handleYaraUpload)
+	mux.HandleFunc("/api/yara/reload", handleYaraReload)
 	mux.HandleFunc("/api/yara/loadpath", handleYaraLoadPath)
 	mux.HandleFunc("/api/yara/status", handleYaraStatus)
 	mux.HandleFunc("/api/yara/scanall", handleYaraScanAll)
@@ -306,16 +307,19 @@ func handleYaraUpload(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, i18n.T("api_tmpfile_fail"))
 		return
 	}
-	io.Copy(dst, file)
-	dst.Close()
-
-	count, err := loadYaraRules(dstPath)
-	w.Header().Set("Content-Type", "application/json")
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": fmt.Sprintf("%v", err)})
+	if _, err := io.Copy(dst, file); err != nil {
+		dst.Close()
+		jsonErr(w, "Failed to save rule file: "+err.Error())
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"ok": true, "rules": count, "path": dstPath, "filename": header.Filename})
+	if err := dst.Close(); err != nil {
+		jsonErr(w, "Failed to save rule file: "+err.Error())
+		return
+	}
+
+	// Save only — caller should POST /api/yara/reload after all files are uploaded
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "saved": true, "filename": header.Filename})
 }
 
 // handleYaraLoadPath loads rules from a local path
@@ -513,6 +517,22 @@ func handleYaraScanOne(w http.ResponseWriter, r *http.Request) {
 	hits := engine.ScanSingleFile(req.Path)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"ok": true, "hits": hits, "count": len(hits)})
+}
+
+// handleYaraReload loads all rules from the upload temp directory.
+func handleYaraReload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	tmpDir := filepath.Join(os.TempDir(), "procir_yara")
+	count, err := loadYaraRules(tmpDir)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": fmt.Sprintf("%v", err)})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "rules": count})
 }
 
 func loadYaraRules(path string) (int, error) {

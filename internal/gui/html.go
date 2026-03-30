@@ -334,13 +334,16 @@ tr.risk-low { border-left: 3px solid #4caf50; opacity: 0.7; }
         <span id="yaraStatusBadge" style="padding:2px 10px;border-radius:10px;font-size:12px;background:#333;color:#888">未加载</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <!-- File upload -->
+        <!-- Single file upload -->
         <input type="file" id="yaraFileInput" accept=".yar,.yara,.rule" multiple style="display:none" onchange="handleYaraFileUpload(event)">
-        <button class="btn btn-primary" onclick="document.getElementById('yaraFileInput').click()">选择规则文件</button>
+        <button class="btn btn-primary" onclick="document.getElementById('yaraFileInput').click()" id="yaraSelectFileBtn">选择规则文件</button>
+        <!-- Folder upload -->
+        <input type="file" id="yaraFolderInput" webkitdirectory style="display:none" onchange="handleYaraFolderUpload(event)">
+        <button class="btn btn-primary" onclick="document.getElementById('yaraFolderInput').click()" id="yaraSelectFolderBtn">加载规则文件夹</button>
         <!-- Path input fallback -->
-        <span style="color:#666">或</span>
+        <span style="color:#666" id="yaraOrSpan">或</span>
         <input id="yaraPathInput" placeholder="输入规则文件/目录路径" style="flex:1;min-width:200px;padding:5px 10px;background:#1a1a2e;border:1px solid #0f3460;color:#e0e0e0;border-radius:4px;font-size:13px">
-        <button class="btn" onclick="loadYaraFromPath()">加载路径</button>
+        <button class="btn" onclick="loadYaraFromPath()" id="yaraLoadPathBtn">加载路径</button>
         <div class="separator"></div>
         <button class="btn btn-primary" id="yaraScanBtn" onclick="startYaraScan()" disabled>开始扫描全部对象</button>
       </div>
@@ -622,10 +625,14 @@ zh: {
   statCrit:'严重:', statHigh:'高危:', statMed:'中危:', statSusp:'可疑:', statLow:'低危:',
   statProc:'进程:', statTrig:'触发器:', statEvt:'事件:', statChain:'行为链:', statIOC:'IOC:',
   // YARA
-  yaraEngine:'YARA 规则引擎', yaraNotLoaded:'未加载', yaraSelectFile:'选择规则文件', yaraOr:'或',
+  yaraEngine:'YARA 规则引擎', yaraNotLoaded:'未加载', yaraSelectFile:'选择规则文件', yaraSelectFolder:'加载规则文件夹', yaraOr:'或',
   yaraPathPH:'输入规则文件/目录路径', yaraLoadPath:'加载路径', yaraScanAll:'开始扫描全部对象',
   yaraEmpty:'加载 YARA 规则并扫描后，命中的对象将显示在此处', yaraScore:'YARA分', yaraRules:'命中规则',
   yaraLoading:'加载中...', yaraRulesLoaded:'条规则已加载', yaraHits:'个命中',
+  yaraNoRuleInFolder:'文件夹中未找到 .yar/.yara/.rule 文件', yaraFolderUploading:'正在上传 %d 个规则文件...',
+  yaraLoadFail:'加载失败', yaraUploadErr:'上传出错: ', yaraFolderDone:'已从文件夹加载 %d 个规则文件，可以开始扫描',
+  yaraFilesDone:'已加载 %d 个规则文件，可以开始扫描', yaraPathLoaded:'从 %s 加载成功',
+  yaraScanRunning:'正在扫描所有对象...',
   yaraScanDone:'扫描完成！', yaraNoMatch:'未发现命中', yaraObjMatch:'个对象命中 YARA 规则',
   // Memory
   memTitle:'内存异常分析', memDesc:'针对指定 PID 进行内存布局深度检测', memPIDPH:'输入进程PID',
@@ -732,10 +739,14 @@ en: {
   localOnly:'local only', items:'items', running:'Running', notRunning:'Stopped', yes:'Yes', no:'No',
   statCrit:'Crit:', statHigh:'High:', statMed:'Med:', statSusp:'Susp:', statLow:'Low:',
   statProc:'Proc:', statTrig:'Trig:', statEvt:'Events:', statChain:'Chains:', statIOC:'IOC:',
-  yaraEngine:'YARA Rule Engine', yaraNotLoaded:'Not Loaded', yaraSelectFile:'Select Rule File', yaraOr:'or',
+  yaraEngine:'YARA Rule Engine', yaraNotLoaded:'Not Loaded', yaraSelectFile:'Select Rule File', yaraSelectFolder:'Load Rule Folder', yaraOr:'or',
   yaraPathPH:'Enter rule file/directory path', yaraLoadPath:'Load Path', yaraScanAll:'Scan All Objects',
   yaraEmpty:'Load YARA rules and scan to see matched objects here', yaraScore:'YARA', yaraRules:'Matched Rules',
   yaraLoading:'Loading...', yaraRulesLoaded:' rules loaded', yaraHits:' hits',
+  yaraNoRuleInFolder:'No .yar/.yara/.rule files found in folder', yaraFolderUploading:'Uploading %d rule files...',
+  yaraLoadFail:'Load failed', yaraUploadErr:'Upload error: ', yaraFolderDone:'Loaded %d rule files from folder, ready to scan',
+  yaraFilesDone:'Loaded %d rule files, ready to scan', yaraPathLoaded:'Loaded from %s',
+  yaraScanRunning:'Scanning all objects...',
   yaraScanDone:'Scan complete! ', yaraNoMatch:'No matches found', yaraObjMatch:' objects matched YARA rules',
   memTitle:'Memory Anomaly Analysis', memDesc:'Deep memory layout detection for specified PID', memPIDPH:'Enter PID',
   memStart:'Analyze', memClear:'Clear', memAnalyzing:'Analyzing...', memAnalyzingPID:'Analyzing PID ',
@@ -904,6 +915,14 @@ function setLang(lang) {
   document.getElementById('ctx_parent').textContent = L.ctx_parent;
   document.getElementById('ctx_cmd').textContent = L.ctx_cmd;
   document.getElementById('ctx_yara').textContent = L.ctx_yara;
+
+  // YARA panel
+  document.getElementById('yaraSelectFileBtn').textContent = L.yaraSelectFile;
+  document.getElementById('yaraSelectFolderBtn').textContent = L.yaraSelectFolder;
+  document.getElementById('yaraOrSpan').textContent = L.yaraOr;
+  document.getElementById('yaraPathInput').placeholder = L.yaraPathPH;
+  document.getElementById('yaraLoadPathBtn').textContent = L.yaraLoadPath;
+  if (!document.getElementById('yaraScanBtn').disabled) document.getElementById('yaraScanBtn').textContent = L.yaraScanAll;
 
   // Status bar
   document.getElementById('statusText').textContent = L.ready;
@@ -1623,46 +1642,72 @@ function renderMemoryResult(data) {
 
 // --- YARA Page Logic ---
 
-async function handleYaraFileUpload(event) {
-  const files = event.target.files;
+function handleYaraFileUpload(event) {
+  uploadYaraFiles(Array.from(event.target.files || []), event);
+}
+
+function handleYaraFolderUpload(event) {
+  const all = Array.from(event.target.files || []);
+  const ruleFiles = all.filter(f => {
+    const n = f.name.toLowerCase();
+    return n.endsWith('.yar') || n.endsWith('.yara') || n.endsWith('.rule');
+  });
+  if (all.length > 0 && ruleFiles.length === 0) {
+    flash(t('yaraNoRuleInFolder')); event.target.value = ''; return;
+  }
+  uploadYaraFiles(ruleFiles, event);
+}
+
+async function uploadYaraFiles(files, event) {
   if (!files || files.length === 0) return;
   const badge = document.getElementById('yaraStatusBadge');
   const msg = document.getElementById('yaraMsg');
-  badge.textContent = '加载中...'; badge.style.background = '#4a3000'; badge.style.color = '#ffd600';
-  msg.textContent = '正在上传规则文件...'; msg.style.color = '#ffd600';
+  badge.textContent = t('yaraLoading'); badge.style.background = '#4a3000'; badge.style.color = '#ffd600';
+  msg.textContent = t('yaraFolderUploading').replace('%d', files.length); msg.style.color = '#ffd600';
 
-  // Upload each file
-  let totalRules = 0;
+  // Upload all files (save only, no re-parse per file)
   for (const file of files) {
     const form = new FormData();
     form.append('rulefile', file);
     try {
       const resp = await fetch('/api/yara/upload', { method: 'POST', body: form });
       const data = await resp.json();
-      if (data.ok) {
-        totalRules = data.rules;
-      } else {
-        msg.textContent = '加载失败: ' + (data.error||''); msg.style.color = '#ff1744';
-        badge.textContent = '加载失败'; badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
-        return;
+      if (!data.ok) {
+        msg.textContent = t('yaraLoadFail') + ': ' + (data.error||''); msg.style.color = '#ff1744';
+        badge.textContent = t('yaraLoadFail'); badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
+        event.target.value = ''; return;
       }
     } catch(e) {
-      msg.textContent = '上传出错: ' + e.message; msg.style.color = '#ff1744';
-      return;
+      msg.textContent = t('yaraUploadErr') + e.message; msg.style.color = '#ff1744';
+      event.target.value = ''; return;
     }
   }
-  badge.textContent = totalRules + ' 条规则已加载'; badge.style.background = '#1a3a1a'; badge.style.color = '#a5d6a7';
-  msg.textContent = '规则加载成功，可以开始扫描'; msg.style.color = '#4caf50';
-  document.getElementById('yaraScanBtn').disabled = false;
-  event.target.value = ''; // reset input
+
+  // Single reload after all files saved
+  try {
+    const resp = await fetch('/api/yara/reload', { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      badge.textContent = data.rules + t('yaraRulesLoaded'); badge.style.background = '#1a3a1a'; badge.style.color = '#a5d6a7';
+      msg.textContent = t('yaraFilesDone').replace('%d', files.length); msg.style.color = '#4caf50';
+      document.getElementById('yaraScanBtn').disabled = false;
+    } else {
+      badge.textContent = t('yaraLoadFail'); badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
+      msg.textContent = data.error || t('yaraLoadFail'); msg.style.color = '#ff1744';
+    }
+  } catch(e) {
+    badge.textContent = t('yaraLoadFail'); badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
+    msg.textContent = e.message; msg.style.color = '#ff1744';
+  }
+  event.target.value = '';
 }
 
 async function loadYaraFromPath() {
   const path = document.getElementById('yaraPathInput').value.trim();
-  if (!path) { flash('请输入路径'); return; }
+  if (!path) { flash(t('yaraPathPH')); return; }
   const badge = document.getElementById('yaraStatusBadge');
   const msg = document.getElementById('yaraMsg');
-  badge.textContent = '加载中...'; badge.style.background = '#4a3000'; badge.style.color = '#ffd600';
+  badge.textContent = t('yaraLoading'); badge.style.background = '#4a3000'; badge.style.color = '#ffd600';
   try {
     const resp = await fetch('/api/yara/loadpath', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -1670,15 +1715,15 @@ async function loadYaraFromPath() {
     });
     const data = await resp.json();
     if (data.ok) {
-      badge.textContent = data.rules + ' 条规则已加载'; badge.style.background = '#1a3a1a'; badge.style.color = '#a5d6a7';
-      msg.textContent = '从 ' + path + ' 加载成功'; msg.style.color = '#4caf50';
+      badge.textContent = data.rules + t('yaraRulesLoaded'); badge.style.background = '#1a3a1a'; badge.style.color = '#a5d6a7';
+      msg.textContent = t('yaraPathLoaded').replace('%s', path); msg.style.color = '#4caf50';
       document.getElementById('yaraScanBtn').disabled = false;
     } else {
-      badge.textContent = '加载失败'; badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
-      msg.textContent = data.error || '加载失败'; msg.style.color = '#ff1744';
+      badge.textContent = t('yaraLoadFail'); badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
+      msg.textContent = data.error || t('yaraLoadFail'); msg.style.color = '#ff1744';
     }
   } catch(e) {
-    badge.textContent = '出错'; badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
+    badge.textContent = t('yaraLoadFail'); badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
     msg.textContent = e.message; msg.style.color = '#ff1744';
   }
 }
@@ -1688,24 +1733,23 @@ async function startYaraScan() {
   const btn = document.getElementById('yaraScanBtn');
   const msg = document.getElementById('yaraMsg');
   const progArea = document.getElementById('yaraProgressArea');
-  btn.disabled = true; btn.textContent = '扫描中...';
+  btn.disabled = true; btn.textContent = t('yaraLoading');
   progArea.style.display = 'block';
-  msg.textContent = '正在扫描所有对象...'; msg.style.color = '#ffd600';
+  msg.textContent = t('yaraScanRunning'); msg.style.color = '#ffd600';
 
   try {
     const resp = await fetch('/api/yara/scanall', { method: 'POST' });
     const data = await resp.json();
     if (!data.ok) {
-      msg.textContent = data.error || '扫描失败'; msg.style.color = '#ff1744';
-      btn.disabled = false; btn.textContent = '开始扫描全部对象';
+      msg.textContent = data.error || t('yaraLoadFail'); msg.style.color = '#ff1744';
+      btn.disabled = false; btn.textContent = t('yaraScanAll');
       progArea.style.display = 'none';
       return;
     }
-    // Start polling progress
     yaraPolling = setInterval(pollYaraProgress, 500);
   } catch(e) {
-    msg.textContent = '出错: ' + e.message; msg.style.color = '#ff1744';
-    btn.disabled = false; btn.textContent = '开始扫描全部对象';
+    msg.textContent = t('yaraUploadErr') + e.message; msg.style.color = '#ff1744';
+    btn.disabled = false; btn.textContent = t('yaraScanAll');
     progArea.style.display = 'none';
   }
 }
@@ -1733,19 +1777,18 @@ async function onYaraScanDone() {
   const progArea = document.getElementById('yaraProgressArea');
   const fill = document.getElementById('yaraProgressFill');
   fill.style.width = '100%';
-  btn.disabled = false; btn.textContent = '开始扫描全部对象';
+  btn.disabled = false; btn.textContent = t('yaraScanAll');
 
-  // Load results
   try {
     const resp = await fetch('/api/yara/results');
     const items = await resp.json();
     renderYaraResults(items || []);
     const cnt = (items||[]).length;
-    msg.textContent = '扫描完成！' + (cnt > 0 ? cnt + ' 个对象命中 YARA 规则' : '未发现命中');
+    msg.textContent = t('yaraScanDone') + (cnt > 0 ? cnt + t('yaraObjMatch') : t('yaraNoMatch'));
     msg.style.color = cnt > 0 ? '#ff9100' : '#4caf50';
     const badge = document.getElementById('yaraStatusBadge');
     if (cnt > 0) {
-      badge.textContent = cnt + ' 个命中'; badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
+      badge.textContent = cnt + t('yaraHits'); badge.style.background = '#5c1a1a'; badge.style.color = '#ff8a80';
     }
     // Also refresh exec objects
     const r = await fetch('/api/execobjects').then(r=>r.json());

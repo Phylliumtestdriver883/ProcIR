@@ -56,27 +56,25 @@ func LoadRules(path string) (*RuleSet, error) {
 	}
 
 	if info.IsDir() {
-		// Load all .yar / .yara files in directory
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
+		// Recursively load all .yar / .yara / .rule files in directory tree
+		filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
 			}
-			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			if ext == ".yar" || ext == ".yara" || ext == ".rule" {
-				data, err := os.ReadFile(filepath.Join(path, entry.Name()))
-				if err != nil {
-					rs.Errors = append(rs.Errors, fmt.Sprintf(i18n.T("yara_read_fail"), entry.Name(), err))
-					continue
-				}
-				rules, errs := parseRules(string(data))
-				rs.Rules = append(rs.Rules, rules...)
-				rs.Errors = append(rs.Errors, errs...)
+			ext := strings.ToLower(filepath.Ext(d.Name()))
+			if ext != ".yar" && ext != ".yara" && ext != ".rule" {
+				return nil
 			}
-		}
+			data, err := os.ReadFile(p)
+			if err != nil {
+				rs.Errors = append(rs.Errors, fmt.Sprintf(i18n.T("yara_read_fail"), p, err))
+				return nil
+			}
+			rules, errs := parseRules(string(data))
+			rs.Rules = append(rs.Rules, rules...)
+			rs.Errors = append(rs.Errors, errs...)
+			return nil
+		})
 	} else {
 		data, err := os.ReadFile(path)
 		if err != nil {

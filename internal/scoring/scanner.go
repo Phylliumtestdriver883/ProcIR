@@ -1,6 +1,7 @@
 package scoring
 
 import (
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -101,9 +102,8 @@ func Scan(progressFn func(current, total int)) *ScanResult {
 			}
 
 			if rec.OriginalName != "" {
-				origLower := strings.ToLower(rec.OriginalName)
-				nameLower := strings.ToLower(proc.Name)
-				if origLower != nameLower {
+				origBase := strings.ToLower(filepath.Base(rec.OriginalName))
+				if origBase != strings.ToLower(proc.Name) {
 					rec.OriginalNameMismatch = true
 				}
 			}

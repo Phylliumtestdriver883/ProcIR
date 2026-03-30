@@ -85,37 +85,38 @@ func IsElectronApp(name string) bool {
 	return knownElectronApps[strings.ToLower(name)]
 }
 
-// System process names that may be masqueraded.
-var systemNames = map[string][]string{
-	"svchost.exe":   {`c:\windows\system32\svchost.exe`},
-	"csrss.exe":     {`c:\windows\system32\csrss.exe`},
-	"lsass.exe":     {`c:\windows\system32\lsass.exe`},
-	"services.exe":  {`c:\windows\system32\services.exe`},
-	"smss.exe":      {`c:\windows\system32\smss.exe`},
-	"wininit.exe":   {`c:\windows\system32\wininit.exe`},
-	"winlogon.exe":  {`c:\windows\system32\winlogon.exe`},
-	"explorer.exe":  {`c:\windows\explorer.exe`, `c:\windows\syswow64\explorer.exe`},
-	"spoolsv.exe":   {`c:\windows\system32\spoolsv.exe`},
-	"taskhost.exe":  {`c:\windows\system32\taskhost.exe`},
-	"taskhostw.exe": {`c:\windows\system32\taskhostw.exe`},
-	"conhost.exe":   {`c:\windows\system32\conhost.exe`},
-	"dllhost.exe":   {`c:\windows\system32\dllhost.exe`},
-	"dwm.exe":       {`c:\windows\system32\dwm.exe`},
+// systemNamePaths lists legitimate directory patterns for system process names.
+// Checked with hasSuffix so they work regardless of drive letter.
+var systemNamePaths = map[string][]string{
+	"svchost.exe":   {`\windows\system32\svchost.exe`},
+	"csrss.exe":     {`\windows\system32\csrss.exe`},
+	"lsass.exe":     {`\windows\system32\lsass.exe`},
+	"services.exe":  {`\windows\system32\services.exe`},
+	"smss.exe":      {`\windows\system32\smss.exe`},
+	"wininit.exe":   {`\windows\system32\wininit.exe`},
+	"winlogon.exe":  {`\windows\system32\winlogon.exe`},
+	"explorer.exe":  {`\windows\explorer.exe`, `\windows\syswow64\explorer.exe`},
+	"spoolsv.exe":   {`\windows\system32\spoolsv.exe`},
+	"taskhost.exe":  {`\windows\system32\taskhost.exe`},
+	"taskhostw.exe": {`\windows\system32\taskhostw.exe`},
+	"conhost.exe":   {`\windows\system32\conhost.exe`},
+	"dllhost.exe":   {`\windows\system32\dllhost.exe`, `\windows\syswow64\dllhost.exe`},
+	"dwm.exe":       {`\windows\system32\dwm.exe`},
 }
 
 // Expected parent process relationships.
 var expectedParents = map[string][]string{
-	"svchost.exe":  {"services.exe"},
-	"lsass.exe":    {"wininit.exe"},
-	"csrss.exe":    {"smss.exe"},
-	"services.exe": {"wininit.exe"},
-	"wininit.exe":  {"smss.exe"},
-	"winlogon.exe": {"smss.exe"},
-	"smss.exe":     {"smss.exe", "system"},
+	"svchost.exe":   {"services.exe", "microsoftedgeupdate.exe"},
+	"lsass.exe":     {"wininit.exe"},
+	"csrss.exe":     {"smss.exe"},
+	"services.exe":  {"wininit.exe"},
+	"wininit.exe":   {"smss.exe"},
+	"winlogon.exe":  {"smss.exe"},
+	"smss.exe":      {"smss.exe", "system", "[system process]"},
 	"taskhostw.exe": {"svchost.exe"},
 	"taskhost.exe":  {"svchost.exe"},
-	"spoolsv.exe":  {"services.exe"},
-	"dllhost.exe":  {"svchost.exe"},
+	"spoolsv.exe":   {"services.exe"},
+	"dllhost.exe":   {"svchost.exe", "services.exe"},
 }
 
 // Known trusted vendors for Anti-FP.
@@ -190,11 +191,11 @@ func Analyze(name, path string, parentName string) *ContextResult {
 		result.PathAbnormal = result.PathCat == PathUserDir || result.PathCat == PathTemp
 	}
 
-	// Check masquerade
-	if validPaths, ok := systemNames[nameLower]; ok && path != "" {
+	// Check masquerade: system process name running from non-system path
+	if validSuffixes, ok := systemNamePaths[nameLower]; ok && path != "" {
 		isMasq := true
-		for _, vp := range validPaths {
-			if strings.EqualFold(pathLower, vp) {
+		for _, suffix := range validSuffixes {
+			if strings.HasSuffix(pathLower, suffix) {
 				isMasq = false
 				break
 			}
