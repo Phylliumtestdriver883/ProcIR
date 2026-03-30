@@ -1,6 +1,8 @@
 # ProcIR - Windows 应急响应进程排查工具
 
 [![GitHub Release](https://img.shields.io/github/v/release/dogadmin/ProcIR)](https://github.com/dogadmin/ProcIR/releases/latest)
+[![GitHub Stars](https://img.shields.io/github/stars/dogadmin/ProcIR?style=social)](https://github.com/dogadmin/ProcIR/stargazers)
+
 **中文** | [English](README_EN.md)
 
 > 面向安全工程师的一键式应急响应工具，快速定位木马、后门、持久化、白加黑、内存注入等威胁。
@@ -259,11 +261,11 @@ ProcIR 内置了一个**纯 Go 实现的 YARA 兼容引擎**（无需 CGO/GCC）
 **使用方式：**
 
 1. 切到「YARA」标签页
-2. 点「选择规则文件」上传 `.yar` 文件，或输入本地路径加载
+2. 点「选择规则文件」上传单个 `.yar` 文件，或点「加载规则文件夹」选择整个规则目录（递归加载子目录），也可输入本地路径加载
 3. 点「开始扫描全部对象」
 4. 查看命中结果
 
-只扫描可疑对象（高评分/用户目录/未签名/有触发器），自动跳过已签名系统文件。
+只扫描可疑对象（高评分/用户目录/未签名/有触发器），自动跳过已签名系统文件。CLI 模式下通过 `-yara` 参数加载规则。
 
 ---
 
@@ -397,6 +399,12 @@ procir/
 6. **用内存分析做深度检测** — 对高风险进程查看内存布局
 7. **用 IOC 监控做动态验证** — 输入威胁情报 IP，看是否有实时通信
 8. **用 AI 分析做智能研判** — 一键将扫描数据发送给 AI，获取专业分析结论和处置建议
+
+---
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=dogadmin/ProcIR&type=Date)](https://star-history.com/#dogadmin/ProcIR&Date)
 
 ---
 

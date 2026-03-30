@@ -3,6 +3,7 @@
 # ProcIR - Windows Incident Response Process Scanner
 
 [![GitHub Release](https://img.shields.io/github/v/release/dogadmin/ProcIR)](https://github.com/dogadmin/ProcIR/releases/latest)
+[![GitHub Stars](https://img.shields.io/github/stars/dogadmin/ProcIR?style=social)](https://github.com/dogadmin/ProcIR/stargazers)
 
 > A one-click incident response tool for security engineers to rapidly identify trojans, backdoors, persistence mechanisms, DLL sideloading, memory injection, and other threats.
 
@@ -270,11 +271,11 @@ ProcIR includes a **pure Go YARA-compatible engine** (no CGO/GCC required), supp
 **Usage:**
 
 1. Switch to the "YARA" tab
-2. Click "Choose Rule File" to upload a `.yar` file, or enter a local path to load
+2. Click "Select Rule File" to upload individual `.yar` files, or click "Load Rule Folder" to select an entire rules directory (recursively loads subdirectories). You can also enter a local path to load
 3. Click "Scan All Objects"
 4. Review hit results
 
-Only suspicious objects are scanned (high score / user directory / unsigned / has triggers), automatically skipping signed system files.
+Only suspicious objects are scanned (high score / user directory / unsigned / has triggers), automatically skipping signed system files. In CLI mode, use the `-yara` flag to load rules.
 
 ---
 
@@ -414,6 +415,12 @@ procir/
 6. **Use Memory Analysis for deep inspection** — examine the memory layout of high-risk processes
 7. **Use IOC Monitor for dynamic validation** — input threat intelligence IPs and check for real-time communication
 8. **Use AI Analysis for intelligent assessment** — submit scan data to AI in one click for professional analysis conclusions and remediation recommendations
+
+---
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=dogadmin/ProcIR&type=Date)](https://star-history.com/#dogadmin/ProcIR&Date)
 
 ---
 
